@@ -1,24 +1,51 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>국내 뉴스 키워드 검색기</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    input, button { padding: 8px; font-size: 14px; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      margin: 0;
+      background: #f5f5f5;
+    }
+    input, button {
+      padding: 8px;
+      font-size: 14px;
+    }
+    .tab-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .tab {
+      padding: 6px 12px;
+      background: #e0e0e0;
+      border-radius: 20px;
+      cursor: pointer;
+    }
+    .tab:hover {
+      background: #d4d4d4;
+    }
     .news-table {
       margin-top: 20px;
       border: 1px solid #ccc;
       padding: 10px;
       border-radius: 6px;
-      background: #f9f9f9;
+      background: #fff;
     }
     .news-table h3 {
       margin: 0 0 10px 0;
       display: flex;
       justify-content: space-between;
     }
-    table { width: 100%; border-collapse: collapse; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
     th, td {
       border: 1px solid #ccc;
       padding: 6px;
@@ -32,12 +59,22 @@
       cursor: pointer;
       border-radius: 4px;
     }
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+      td {
+        border: none;
+        padding: 4px 0;
+      }
+    }
   </style>
 </head>
 <body>
 
   <h2>국내 뉴스 키워드 검색기</h2>
-  <input type="text" id="keyword" placeholder="예: 트럼프, HBAR, 암호화폐" />
+  <div class="tab-bar" id="favorite-tabs"></div>
+  <input type="text" id="keyword" placeholder="예: 기업복지, 휴양복지, 포스코" />
   <button onclick="searchNews()">검색</button>
 
   <div id="news-container"></div>
@@ -46,20 +83,20 @@
   let tableCount = 0;
   const maxTables = 15;
   const savedKeywordsKey = "savedKeywords";
+  const lastHashes = {};
 
-  // ✅ 1. 자동 새검색 (10분마다)
+  // 10분마다 자동 업데이트
   setInterval(() => {
     const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
     keywords.forEach(k => refreshNews(k));
-  }, 10 * 60 * 1000); // 10분 주기
+  }, 10 * 60 * 1000);
 
-  // ✅ 3. 페이지 로드 시 localStorage 복원
   window.onload = () => {
     const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
     keywords.forEach(k => searchNews(k, false));
+    renderTabs();
   };
 
-  // ✅ 뉴스 검색 및 테이블 생성
   function searchNews(keyword = "", save = true) {
     if (!keyword) keyword = document.getElementById("keyword").value.trim();
     if (!keyword) return alert("키워드를 입력해주세요.");
@@ -68,22 +105,24 @@
     fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
       .then(res => {
         if (!res.ok) {
-          if (res.status === 403 || res.status === 429) {
-            throw new Error("검색량 제한에 도달했습니다.");
-          } else {
-            throw new Error("뉴스 검색에 실패했습니다.");
-          }
+          if (res.status === 403 || res.status === 429) throw new Error("검색량 제한에 도달했습니다.");
+          else throw new Error("뉴스 검색에 실패했습니다.");
         }
         return res.json();
       })
       .then(data => {
         if (!data.length) return alert("뉴스 결과가 없습니다.");
 
+        const hash = data.map(d => d.link).join(",");
+        if (lastHashes[keyword] && lastHashes[keyword] !== hash) {
+          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+        }
+        lastHashes[keyword] = hash;
+
         const old = document.getElementById("table-" + keyword);
         if (old) old.remove();
 
         tableCount++;
-
         const div = document.createElement("div");
         div.className = "news-table";
         div.id = "table-" + keyword;
@@ -95,14 +134,17 @@
           </h3>
           <table>
             <thead>
-              <tr><th>제목</th><th>출처</th><th>날짜</th></tr>
+              <tr><th>제목</th><th>요약</th><th>출처</th><th>날짜</th></tr>
             </thead>
             <tbody>`;
 
         data.forEach(item => {
+          const cleanSummary = (item.description || "").replace(/<[^>]+>/g, "");
+          const short = cleanSummary.length > 60 ? cleanSummary.substring(0, 60) + "..." : cleanSummary;
           html += `
             <tr>
               <td><a href="${item.link}" target="_blank">${item.title}</a></td>
+              <td>${short}</td>
               <td>${item.source}</td>
               <td>${item.date}</td>
             </tr>`;
@@ -117,19 +159,24 @@
           if (!keywords.includes(keyword)) {
             keywords.push(keyword);
             localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+            renderTabs();
           }
         }
       })
       .catch(err => alert(err.message));
   }
 
-  // ✅ 자동 새검색용 최신화 함수
   function refreshNews(keyword) {
-    if (!keyword) return;
     fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
       .then(res => res.json())
       .then(data => {
         if (!data.length) return;
+        const hash = data.map(d => d.link).join(",");
+        if (lastHashes[keyword] && lastHashes[keyword] !== hash) {
+          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+        }
+        lastHashes[keyword] = hash;
+
         const div = document.getElementById("table-" + keyword);
         if (div) div.remove();
         tableCount--;
@@ -137,7 +184,6 @@
       });
   }
 
-  // ✅ 테이블 삭제 및 localStorage 제거
   function removeTable(id, keyword) {
     const el = document.getElementById(id);
     if (el) {
@@ -146,6 +192,20 @@
     }
     const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
     localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+    renderTabs();
+  }
+
+  function renderTabs() {
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    const container = document.getElementById("favorite-tabs");
+    container.innerHTML = "";
+    keywords.forEach(k => {
+      const tab = document.createElement("div");
+      tab.className = "tab";
+      tab.innerText = k;
+      tab.onclick = () => searchNews(k, false);
+      container.appendChild(tab);
+    });
   }
 </script>
 
