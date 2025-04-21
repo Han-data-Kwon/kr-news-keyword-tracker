@@ -1,10 +1,14 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import requests
-from bs4 import BeautifulSoup
+import os
 
 app = Flask(__name__)
 CORS(app)
+
+# 환경변수에서 Client ID / Secret 불러오기
+NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 
 @app.route("/")
 def home():
@@ -16,38 +20,37 @@ def search_news():
     if not keyword:
         return jsonify([])
 
-    # ✅ 최신 Chrome 환경 User-Agent로 설정
+    url = "https://openapi.naver.com/v1/search/news.json"
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/123.0.0.0 Safari/537.36"
-        )
+        "X-Naver-Client-Id": NAVER_CLIENT_ID,
+        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
+    }
+    params = {
+        "query": keyword,
+        "display": 5,
+        "sort": "date"
     }
 
-    url = f"https://www.google.com/search?q={keyword}+site:.kr&tbm=nws&hl=ko"
-    res = requests.get(url, headers=headers)
+    try:
+        res = requests.get(url, headers=headers, params=params)
+        data = res.json().get("items", [])
 
-    soup = BeautifulSoup(res.text, "html.parser")
-    results = []
+        results = []
+        for item in data:
+            results.append({
+                "title": item.get("title", "").replace("<b>", "").replace("</b>", ""),
+                "link": item.get("link"),
+                "source": item.get("originallink") or item.get("link"),
+                "date": item.get("pubDate", "")
+            })
 
-    for g in soup.select("div.dbsr")[:5]:
-        title = g.select_one("div.JheGif.nDgy9d")
-        link = g.a["href"]
-        source = g.select_one(".XTjFC.WF4CUc")
-        date = g.select_one(".WG9SHc span")
+        return jsonify(results)
 
-        results.append({
-            "title": title.text if title else "",
-            "link": link,
-            "source": source.text if source else "",
-            "date": date.text if date else ""
-        })
+    except Exception as e:
+        print("NAVER API 오류:", e)
+        return jsonify([])
 
-    return jsonify(results)
-
-# ✅ Render 배포 대응
+# Render 호환 포트 설정
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
