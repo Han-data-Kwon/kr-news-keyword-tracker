@@ -2,16 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <title>국내 뉴스 키워드 검색</title>
+  <title>국내 뉴스 키워드 검색기</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-    }
-    input, button {
-      padding: 8px;
-      font-size: 14px;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input, button { padding: 8px; font-size: 14px; }
     .news-table {
       margin-top: 20px;
       border: 1px solid #ccc;
@@ -24,10 +18,7 @@
       display: flex;
       justify-content: space-between;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-    }
+    table { width: 100%; border-collapse: collapse; }
     th, td {
       border: 1px solid #ccc;
       padding: 6px;
@@ -54,16 +45,43 @@
 <script>
   let tableCount = 0;
   const maxTables = 15;
+  const savedKeywordsKey = "savedKeywords";
 
-  function searchNews() {
-    const keyword = document.getElementById("keyword").value.trim();
+  // ✅ 1. 자동 새검색 (10분마다)
+  setInterval(() => {
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    keywords.forEach(k => refreshNews(k));
+  }, 10 * 60 * 1000); // 10분 주기
+
+  // ✅ 3. 페이지 로드 시 localStorage 복원
+  window.onload = () => {
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    keywords.forEach(k => searchNews(k, false));
+  };
+
+  // ✅ 뉴스 검색 및 테이블 생성
+  function searchNews(keyword = "", save = true) {
+    if (!keyword) keyword = document.getElementById("keyword").value.trim();
     if (!keyword) return alert("키워드를 입력해주세요.");
     if (tableCount >= maxTables) return alert("최대 15개의 검색 결과만 표시됩니다.");
 
     fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          if (res.status === 403 || res.status === 429) {
+            throw new Error("검색량 제한에 도달했습니다.");
+          } else {
+            throw new Error("뉴스 검색에 실패했습니다.");
+          }
+        }
+        return res.json();
+      })
       .then(data => {
         if (!data.length) return alert("뉴스 결과가 없습니다.");
+
+        const old = document.getElementById("table-" + keyword);
+        if (old) old.remove();
+
         tableCount++;
 
         const div = document.createElement("div");
@@ -73,7 +91,7 @@
         let html = `
           <h3>
             ${keyword} 관련 뉴스
-            <button class="remove-btn" onclick="removeTable('${div.id}')">삭제</button>
+            <button class="remove-btn" onclick="removeTable('${div.id}', '${keyword}')">삭제</button>
           </h3>
           <table>
             <thead>
@@ -93,15 +111,41 @@
         html += "</tbody></table>";
         div.innerHTML = html;
         document.getElementById("news-container").prepend(div);
+
+        if (save) {
+          const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+          if (!keywords.includes(keyword)) {
+            keywords.push(keyword);
+            localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+          }
+        }
+      })
+      .catch(err => alert(err.message));
+  }
+
+  // ✅ 자동 새검색용 최신화 함수
+  function refreshNews(keyword) {
+    if (!keyword) return;
+    fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.length) return;
+        const div = document.getElementById("table-" + keyword);
+        if (div) div.remove();
+        tableCount--;
+        searchNews(keyword, false);
       });
   }
 
-  function removeTable(id) {
+  // ✅ 테이블 삭제 및 localStorage 제거
+  function removeTable(id, keyword) {
     const el = document.getElementById(id);
     if (el) {
       el.remove();
       tableCount--;
     }
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
+    localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
   }
 </script>
 
