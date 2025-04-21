@@ -16,14 +16,21 @@ def search_news():
     if not keyword:
         return jsonify([])
 
+    # ✅ 최신 Chrome 환경 User-Agent로 설정
     headers = {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/123.0.0.0 Safari/537.36"
+        )
     }
+
     url = f"https://www.google.com/search?q={keyword}+site:.kr&tbm=nws&hl=ko"
     res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
 
+    soup = BeautifulSoup(res.text, "html.parser")
     results = []
+
     for g in soup.select("div.dbsr")[:5]:
         title = g.select_one("div.JheGif.nDgy9d")
         link = g.a["href"]
@@ -39,7 +46,7 @@ def search_news():
 
     return jsonify(results)
 
-# ✅ Render 환경을 위한 포트 바인딩
+# ✅ Render 배포 대응
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 5000))
