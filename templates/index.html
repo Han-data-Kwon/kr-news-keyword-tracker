@@ -30,7 +30,10 @@
     .trend-header {
       display: flex; justify-content: space-between; align-items: center;
     }
-    canvas { max-width: 100%; height: 200px; }
+    canvas {
+      width: 100% !important;
+      height: 120px !important;
+    }
     table { width: 100%; border-collapse: collapse; }
     th, td {
       border: 1px solid #ccc; padding: 6px; font-size: 13px;
@@ -62,7 +65,6 @@
   const keywordFreqKey = "keywordFreq";
   const lastHashes = {};
   const lastLinks = {};
-  let globalMaxY = 100;
 
   setInterval(() => {
     const keywords = getSortedTopKeywords();
@@ -233,6 +235,9 @@
     fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
       .then(res => res.json())
       .then(data => {
+        // 전체 Y축 범위 다시 설정
+        let maxY = Math.max(...data.map(d => d.ratio), 100);
+
         const existing = document.getElementById("trend-" + keyword);
         if (existing) existing.remove();
 
@@ -255,10 +260,6 @@
         container.appendChild(canvas);
         document.getElementById("trend-charts").appendChild(container);
 
-        const ratios = data.map(d => d.ratio);
-        const maxY = Math.max(...ratios, 100);
-        globalMaxY = Math.max(globalMaxY, maxY);
-
         const ctx = canvas.getContext("2d");
         new Chart(ctx, {
           type: "line",
@@ -266,7 +267,7 @@
             labels: data.map(d => d.date),
             datasets: [{
               label: keyword + " 검색 비율",
-              data: ratios,
+              data: data.map(d => d.ratio),
               borderColor: "rgba(75, 192, 192, 1)",
               backgroundColor: "rgba(75, 192, 192, 0.1)",
               fill: true,
@@ -275,12 +276,10 @@
           },
           options: {
             scales: {
-              x: {
-                ticks: { maxTicksLimit: 6 }
-              },
+              x: { ticks: { maxTicksLimit: 6 } },
               y: {
                 beginAtZero: true,
-                suggestedMax: globalMaxY
+                suggestedMax: maxY
               }
             },
             plugins: {
