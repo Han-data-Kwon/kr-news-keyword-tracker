@@ -4,96 +4,77 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>국내 뉴스 키워드 검색기</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      padding: 20px;
-      margin: 0;
-      background: #f5f5f5;
-    }
-    input, button {
-      padding: 8px;
-      font-size: 14px;
-    }
-    .tab-bar {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    input, button { padding: 8px; font-size: 14px; }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
     .tab {
-      padding: 6px 12px;
-      background: #e0e0e0;
-      border-radius: 20px;
-      cursor: pointer;
+      padding: 6px 12px; background: #e0e0e0; border-radius: 20px;
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
     }
-    .tab:hover {
-      background: #d4d4d4;
+    .tab span { font-weight: bold; }
+    .tab .close {
+      background: transparent; border: none; color: red;
+      font-weight: bold; cursor: pointer;
     }
+    .tab:hover { background: #d4d4d4; }
     .news-table {
-      margin-top: 20px;
-      border: 1px solid #ccc;
-      padding: 10px;
-      border-radius: 6px;
-      background: #fff;
+      margin-top: 20px; border: 1px solid #ccc;
+      padding: 10px; border-radius: 6px; background: #fff;
     }
-    .news-table h3 {
-      margin: 0 0 10px 0;
-      display: flex;
-      justify-content: space-between;
+    .trend-container {
+      margin-top: 10px; background: #fff;
+      padding: 15px; border-radius: 6px;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
+    .trend-header {
+      display: flex; justify-content: space-between; align-items: center;
     }
+    canvas { max-width: 100%; height: 200px; }
+    table { width: 100%; border-collapse: collapse; }
     th, td {
-      border: 1px solid #ccc;
-      padding: 6px;
-      font-size: 13px;
+      border: 1px solid #ccc; padding: 6px; font-size: 13px;
     }
+    tr.highlight { background-color: #fff7cc; }
     button.remove-btn {
-      background: red;
-      color: white;
-      border: none;
-      padding: 4px 8px;
-      cursor: pointer;
-      border-radius: 4px;
+      background: red; color: white; border: none;
+      padding: 4px 8px; cursor: pointer; border-radius: 4px;
     }
     @media (max-width: 768px) {
-      table, thead, tbody, th, td, tr {
-        display: block;
-      }
-      td {
-        border: none;
-        padding: 4px 0;
-      }
+      table, thead, tbody, th, td, tr { display: block; }
+      td { border: none; padding: 4px 0; }
     }
   </style>
 </head>
 <body>
 
-  <h2>국내 뉴스 키워드 검색기</h2>
-  <div class="tab-bar" id="favorite-tabs"></div>
-  <input type="text" id="keyword" placeholder="예: 기업복지, 휴양복지, 포스코" />
-  <button onclick="searchNews()">검색</button>
-
-  <div id="news-container"></div>
+<h2>국내 뉴스 키워드 검색기</h2>
+<div class="tab-bar" id="favorite-tabs"></div>
+<input type="text" id="keyword" placeholder="예: 트럼프, HBAR, 암호화폐" />
+<button onclick="searchNews()">검색</button>
+<div id="news-container"></div>
+<div id="trend-charts"></div>
 
 <script>
   let tableCount = 0;
   const maxTables = 15;
   const savedKeywordsKey = "savedKeywords";
+  const keywordFreqKey = "keywordFreq";
   const lastHashes = {};
+  const lastLinks = {};
+  let globalMaxY = 100;
 
-  // 10분마다 자동 업데이트
   setInterval(() => {
-    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    const keywords = getSortedTopKeywords();
     keywords.forEach(k => refreshNews(k));
   }, 10 * 60 * 1000);
 
   window.onload = () => {
-    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
-    keywords.forEach(k => searchNews(k, false));
+    const keywords = getSortedTopKeywords();
+    keywords.forEach(k => {
+      searchNews(k, false);
+      renderTrendChart(k);
+    });
     renderTabs();
   };
 
@@ -103,21 +84,19 @@
     if (tableCount >= maxTables) return alert("최대 15개의 검색 결과만 표시됩니다.");
 
     fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
-      .then(res => {
-        if (!res.ok) {
-          if (res.status === 403 || res.status === 429) throw new Error("검색량 제한에 도달했습니다.");
-          else throw new Error("뉴스 검색에 실패했습니다.");
-        }
-        return res.json();
-      })
+      .then(res => res.ok ? res.json() : Promise.reject(res))
       .then(data => {
         if (!data.length) return alert("뉴스 결과가 없습니다.");
 
         const hash = data.map(d => d.link).join(",");
-        if (lastHashes[keyword] && lastHashes[keyword] !== hash) {
-          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
-        }
+        const prevLinks = lastLinks[keyword] || [];
+        const newLinks = data.map(d => d.link);
+        const isNew = hash !== lastHashes[keyword];
+
+        if (isNew) alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+
         lastHashes[keyword] = hash;
+        lastLinks[keyword] = newLinks;
 
         const old = document.getElementById("table-" + keyword);
         if (old) old.remove();
@@ -130,19 +109,19 @@
         let html = `
           <h3>
             ${keyword} 관련 뉴스
-            <button class="remove-btn" onclick="removeTable('${div.id}', '${keyword}')">삭제</button>
+            <button class="remove-btn" onclick="removeTableOnly('${div.id}')">삭제</button>
           </h3>
           <table>
-            <thead>
-              <tr><th>제목</th><th>요약</th><th>출처</th><th>날짜</th></tr>
-            </thead>
+            <thead><tr><th>제목</th><th>요약</th><th>출처</th><th>날짜</th></tr></thead>
             <tbody>`;
 
         data.forEach(item => {
-          const cleanSummary = (item.description || "").replace(/<[^>]+>/g, "");
-          const short = cleanSummary.length > 60 ? cleanSummary.substring(0, 60) + "..." : cleanSummary;
+          const raw = item.description || item.title || "";
+          const clean = raw.replace(/<[^>]+>/g, "");
+          const short = clean.length > 60 ? clean.substring(0, 60) + "..." : clean;
+          const highlightClass = !prevLinks.includes(item.link) ? "highlight" : "";
           html += `
-            <tr>
+            <tr class="${highlightClass}">
               <td><a href="${item.link}" target="_blank">${item.title}</a></td>
               <td>${short}</td>
               <td>${item.source}</td>
@@ -156,14 +135,21 @@
 
         if (save) {
           const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+          const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+          freqs[keyword] = (freqs[keyword] || 0) + 1;
+          localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
           if (!keywords.includes(keyword)) {
             keywords.push(keyword);
             localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
-            renderTabs();
           }
+          renderTabs();
+          renderTrendChart(keyword);
         }
       })
-      .catch(err => alert(err.message));
+      .catch(err => {
+        if (err.status === 403 || err.status === 429) alert("검색량 제한에 도달했습니다.");
+        else alert("뉴스 검색에 실패했습니다.");
+      });
   }
 
   function refreshNews(keyword) {
@@ -172,10 +158,14 @@
       .then(data => {
         if (!data.length) return;
         const hash = data.map(d => d.link).join(",");
-        if (lastHashes[keyword] && lastHashes[keyword] !== hash) {
-          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
-        }
+        const prevLinks = lastLinks[keyword] || [];
+        const newLinks = data.map(d => d.link);
+        const isNew = hash !== lastHashes[keyword];
+
+        if (isNew) alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+
         lastHashes[keyword] = hash;
+        lastLinks[keyword] = newLinks;
 
         const div = document.getElementById("table-" + keyword);
         if (div) div.remove();
@@ -184,28 +174,123 @@
       });
   }
 
-  function removeTable(id, keyword) {
+  function removeTableOnly(id) {
     const el = document.getElementById(id);
     if (el) {
       el.remove();
       tableCount--;
     }
+  }
+
+  function removeKeywordCompletely(keyword) {
+    removeTableOnly("table-" + keyword);
+    document.getElementById("trend-" + keyword)?.remove();
     const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
     localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+    const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+    delete freqs[keyword];
+    localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
     renderTabs();
   }
 
   function renderTabs() {
-    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    const keywords = getSortedTopKeywords();
     const container = document.getElementById("favorite-tabs");
     container.innerHTML = "";
+
     keywords.forEach(k => {
       const tab = document.createElement("div");
       tab.className = "tab";
-      tab.innerText = k;
-      tab.onclick = () => searchNews(k, false);
+
+      const span = document.createElement("span");
+      span.innerText = k;
+      span.onclick = () => {
+        searchNews(k, false);
+        renderTrendChart(k);
+      };
+
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "close";
+      closeBtn.innerText = "x";
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        removeKeywordCompletely(k);
+      };
+
+      tab.appendChild(span);
+      tab.appendChild(closeBtn);
       container.appendChild(tab);
     });
+  }
+
+  function getSortedTopKeywords() {
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+    return keywords.sort((a, b) => (freqs[b] || 0) - (freqs[a] || 0)).slice(0, 5);
+  }
+
+  function renderTrendChart(keyword, period = "30d") {
+    fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
+      .then(res => res.json())
+      .then(data => {
+        const existing = document.getElementById("trend-" + keyword);
+        if (existing) existing.remove();
+
+        const container = document.createElement("div");
+        container.className = "trend-container";
+        container.id = "trend-" + keyword;
+
+        const header = document.createElement("div");
+        header.className = "trend-header";
+        header.innerHTML = `<h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
+          <div>
+            <button onclick="renderTrendChart('${keyword}', '30d')">30일</button>
+            <button onclick="renderTrendChart('${keyword}', '1y')">1년</button>
+          </div>`;
+
+        const canvas = document.createElement("canvas");
+        canvas.id = "chart-" + keyword;
+
+        container.appendChild(header);
+        container.appendChild(canvas);
+        document.getElementById("trend-charts").appendChild(container);
+
+        const ratios = data.map(d => d.ratio);
+        const maxY = Math.max(...ratios, 100);
+        globalMaxY = Math.max(globalMaxY, maxY);
+
+        const ctx = canvas.getContext("2d");
+        new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: data.map(d => d.date),
+            datasets: [{
+              label: keyword + " 검색 비율",
+              data: ratios,
+              borderColor: "rgba(75, 192, 192, 1)",
+              backgroundColor: "rgba(75, 192, 192, 0.1)",
+              fill: true,
+              tension: 0.3
+            }]
+          },
+          options: {
+            scales: {
+              x: {
+                ticks: { maxTicksLimit: 6 }
+              },
+              y: {
+                beginAtZero: true,
+                suggestedMax: globalMaxY
+              }
+            },
+            plugins: {
+              legend: { display: false }
+            },
+            responsive: true,
+            maintainAspectRatio: false
+          }
+        });
+      });
   }
 </script>
 
