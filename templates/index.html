@@ -3,32 +3,60 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>뉴스 카드 UI 고도화</title>
+  <title>국내 뉴스&트렌드 키워드 검색기</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 20px; }
-    input, button { padding: 8px; font-size: 14px; margin-right: 5px; }
-    .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
-    .card-container { display: flex; flex-wrap: wrap; gap: 16px; }
-    .card {
-      background: white; border-radius: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      width: 320px; padding: 15px; position: relative;
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    input, button { padding: 8px; font-size: 14px; }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+    .tab {
+      padding: 6px 12px; background: #e0e0e0; border-radius: 20px;
+      cursor: pointer; display: flex; align-items: center; gap: 6px;
     }
-    .sentiment { font-weight: bold; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-bottom: 8px; }
-    .sentiment.pos { background: #d2f8d2; color: #2e7d32; }
-    .sentiment.neg { background: #fcdede; color: #c62828; }
-    .sentiment.neu { background: #eeeeee; color: #616161; }
-    .chart-wrapper { margin-top: 10px; }
-    .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
-    canvas { width: 100% !important; height: 120px !important; }
+    .tab span { font-weight: bold; }
+    .tab .close {
+      background: transparent; border: none; color: red;
+      font-weight: bold; cursor: pointer;
+    }
+    .tab:hover { background: #d4d4d4; }
+    .news-table {
+      margin-top: 20px; border: 1px solid #ccc;
+      padding: 10px; border-radius: 6px; background: #fff;
+    }
+    .trend-container {
+      margin-top: 10px; background: #fff;
+      padding: 15px; border-radius: 6px;
+    }
+    .trend-header {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    canvas {
+      width: 100% !important;
+      height: 120px !important;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td {
+      border: 1px solid #ccc; padding: 6px; font-size: 13px;
+    }
+    tr.highlight { background-color: #fff7cc; }
+    button.remove-btn {
+      background: red; color: white; border: none;
+      padding: 4px 8px; cursor: pointer; border-radius: 4px;
+    }
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      td { border: none; padding: 4px 0; }
+    }
   </style>
 </head>
 <body>
 
-<h2>뉴스 카드 검색기</h2>
-<input type="text" id="keyword" placeholder="예: 비트코인, 헤데라" />
-<button onclick="searchKeyword()">검색</button>
-<div class="card-container" id="card-container"></div>
+<h2>국내 뉴스 키워드 검색기</h2>
+<div class="tab-bar" id="favorite-tabs"></div>
+<input type="text" id="keyword" placeholder="예: 복지, B2B, 트럼프" />
+<button onclick="searchNews()">검색</button>
+<div id="news-container"></div>
+<div id="trend-charts"></div>
 
 <script>
 const positiveWords = ["급등", "호재", "성장", "기대", "회복", "반등", "돌파", "상승"];
@@ -49,72 +77,245 @@ function sentimentLabel(type) {
   return "중립";
 }
 
-function searchKeyword() {
-  const keyword = document.getElementById("keyword").value.trim();
-  if (!keyword) return alert("키워드를 입력하세요.");
+  let tableCount = 0;
+  const maxTables = 15;
+  const savedKeywordsKey = "savedKeywords";
+  const keywordFreqKey = "keywordFreq";
+  const lastHashes = {};
+  const lastLinks = {};
 
-  fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
-    .then(res => res.json())
-    .then(news => {
-      news.forEach((item, idx) => {
-        const sentiment = analyzeSentiment(item.title);
-        const card = document.createElement("div");
-        card.className = "card";
+  setInterval(() => {
+    const keywords = getSortedTopKeywords();
+    keywords.forEach(k => refreshNews(k));
+  }, 10 * 60 * 1000);
 
-        card.innerHTML = `
-          <div class="sentiment ${sentiment}">[${sentimentLabel(sentiment)}]</div>
-          <a href="${item.link}" target="_blank"><strong>${item.title}</strong></a><br/>
-          <small>출처: ${item.source} | 날짜: ${item.date}</small>
-          <div class="chart-wrapper" id="chart-wrap-${keyword}-${idx}">
-            <div class="chart-header">
-              <span>트렌드 (30일)</span>
-              <div>
-                <button onclick="renderTrendChart('${keyword}', '30d', '${keyword}-${idx}')">30일</button>
-                <button onclick="renderTrendChart('${keyword}', '1y', '${keyword}-${idx}')">1년</button>
-              </div>
-            </div>
-            <canvas id="chart-${keyword}-${idx}"></canvas>
-          </div>
-        `;
-        document.getElementById("card-container").prepend(card);
-        renderTrendChart(keyword, "30d", `${keyword}-${idx}`);
-      });
+  window.onload = () => {
+    const keywords = getSortedTopKeywords();
+    keywords.forEach(k => {
+      searchNews(k, false);
+      renderTrendChart(k);
     });
-}
+    renderTabs();
+  };
 
-function renderTrendChart(keyword, period, keyId) {
-  fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
-    .then(res => res.json())
-    .then(data => {
-      const ctx = document.getElementById("chart-" + keyId).getContext("2d");
-      new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: data.map(d => d.date),
-          datasets: [{
-            label: keyword + " 검색 비율",
-            data: data.map(d => d.ratio),
-            borderColor: "rgba(54, 162, 235, 1)",
-            backgroundColor: "rgba(54, 162, 235, 0.1)",
-            tension: 0.4,
-            fill: true
-          }]
-        },
-        options: {
-          scales: {
-            x: { display: true, ticks: { maxTicksLimit: 6 } },
-            y: { display: false }
-          },
-          plugins: {
-            legend: { display: false },
-            tooltip: { enabled: true }
-          },
-          responsive: true,
-          maintainAspectRatio: false
+  function searchNews(keyword = "", save = true) {
+    if (!keyword) keyword = document.getElementById("keyword").value.trim();
+    if (!keyword) return alert("키워드를 입력해주세요.");
+    if (tableCount >= maxTables) return alert("최대 15개의 검색 결과만 표시됩니다.");
+
+    fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(data => {
+        if (!data.length) return alert("뉴스 결과가 없습니다.");
+
+        const hash = data.map(d => d.link).join(",");
+        const prevLinks = lastLinks[keyword] || [];
+        const newLinks = data.map(d => d.link);
+        const isNew = hash !== lastHashes[keyword];
+
+        if (isNew) alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+
+        lastHashes[keyword] = hash;
+        lastLinks[keyword] = newLinks;
+
+        const old = document.getElementById("table-" + keyword);
+        if (old) old.remove();
+
+        tableCount++;
+        const div = document.createElement("div");
+        div.className = "news-table";
+        div.id = "table-" + keyword;
+
+        let html = `
+          <h3>
+            ${keyword} 관련 뉴스
+            <button class="remove-btn" onclick="removeTableOnly('${div.id}')">삭제</button>
+          </h3>
+          <table>
+            <thead><tr><th>제목</th><th>요약</th><th>출처</th><th>날짜</th></tr></thead>
+            <tbody>`;
+
+        data.forEach(item => {
+          const raw = item.description || item.title || "";
+          const clean = raw.replace(/<[^>]+>/g, "");
+          const short = clean.length > 60 ? clean.substring(0, 60) + "..." : clean;
+          const highlightClass = !prevLinks.includes(item.link) ? "highlight" : "";
+          html += `
+            <tr class="${highlightClass}">
+              <td><a href="${item.link}" target="_blank">${item.title}</a></td>
+              <td>${short}</td>
+              <td>${item.source}</td>
+              <td>${item.date}</td>
+            </tr>`;
+        });
+
+        html += "</tbody></table>";
+        div.innerHTML = html;
+        document.getElementById("news-container").prepend(div);
+
+        if (save) {
+          const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+          const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+          freqs[keyword] = (freqs[keyword] || 0) + 1;
+          localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
+          if (!keywords.includes(keyword)) {
+            keywords.push(keyword);
+            localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+          }
+          renderTabs();
+          renderTrendChart(keyword);
         }
+      })
+      .catch(err => {
+        if (err.status === 403 || err.status === 429) alert("검색량 제한에 도달했습니다.");
+        else alert("뉴스 검색에 실패했습니다.");
       });
+  }
+
+  function refreshNews(keyword) {
+    fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.length) return;
+        const hash = data.map(d => d.link).join(",");
+        const prevLinks = lastLinks[keyword] || [];
+        const newLinks = data.map(d => d.link);
+        const isNew = hash !== lastHashes[keyword];
+
+        if (isNew) alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+
+        lastHashes[keyword] = hash;
+        lastLinks[keyword] = newLinks;
+
+        const div = document.getElementById("table-" + keyword);
+        if (div) div.remove();
+        tableCount--;
+        searchNews(keyword, false);
+      });
+  }
+
+  function removeTableOnly(id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.remove();
+      tableCount--;
+    }
+  }
+
+  function removeKeywordCompletely(keyword) {
+    removeTableOnly("table-" + keyword);
+    document.getElementById("trend-" + keyword)?.remove();
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
+    localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+    const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+    delete freqs[keyword];
+    localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
+    renderTabs();
+  }
+
+  function renderTabs() {
+    const keywords = getSortedTopKeywords();
+    const container = document.getElementById("favorite-tabs");
+    container.innerHTML = "";
+
+    keywords.forEach(k => {
+      const tab = document.createElement("div");
+      tab.className = "tab";
+
+      const span = document.createElement("span");
+      span.innerText = k;
+      span.onclick = () => {
+        searchNews(k, false);
+        renderTrendChart(k);
+      };
+
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "close";
+      closeBtn.innerText = "x";
+      closeBtn.onclick = (e) => {
+        e.stopPropagation();
+        removeKeywordCompletely(k);
+      };
+
+      tab.appendChild(span);
+      tab.appendChild(closeBtn);
+      container.appendChild(tab);
     });
-}
+  }
+
+  function getSortedTopKeywords() {
+    const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+    const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+    return keywords.sort((a, b) => (freqs[b] || 0) - (freqs[a] || 0)).slice(0, 5);
+  }
+
+  function renderTrendChart(keyword, period = "30d") {
+    fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
+      .then(res => res.json())
+      .then(data => {
+        // 전체 Y축 범위 다시 설정
+        let maxY = Math.max(...data.map(d => d.ratio), 100);
+
+        const existing = document.getElementById("trend-" + keyword);
+        if (existing) existing.remove();
+
+        const container = document.createElement("div");
+        container.className = "trend-container";
+        container.id = "trend-" + keyword;
+
+        const header = document.createElement("div");
+        header.className = "trend-header";
+        header.innerHTML = `<h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
+          <div>
+            <button onclick="renderTrendChart('${keyword}', '30d')">30일</button>
+            <button onclick="renderTrendChart('${keyword}', '1y')">1년</button>
+          </div>`;
+
+        const canvas = document.createElement("canvas");
+        canvas.id = "chart-" + keyword;
+
+          container.appendChild(header);
+          container.appendChild(canvas);
+          document.getElementById("trend-charts").appendChild(container);
+        } else {
+          container.querySelector("h4").innerText = `${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})`;
+          canvas = container.querySelector("canvas");
+          const newCanvas = canvas.cloneNode(true);
+          canvas.parentNode.replaceChild(newCanvas, canvas);
+          canvas = newCanvas;
+        }
+
+        const ctx = canvas.getContext("2d");
+        new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: data.map(d => d.date),
+            datasets: [{
+              label: keyword + " 검색 비율",
+              data: data.map(d => d.ratio),
+              borderColor: "rgba(75, 192, 192, 1)",
+              backgroundColor: "rgba(75, 192, 192, 0.1)",
+              fill: true,
+              tension: 0.3
+            }]
+          },
+          options: {
+            scales: {
+              x: { ticks: { maxTicksLimit: 6 } },
+              y: {
+                beginAtZero: true,
+                suggestedMax: maxY
+              }
+            },
+            plugins: {
+              legend: { display: false }
+            },
+            responsive: true,
+            maintainAspectRatio: false
+          }
+        });
+      });
+  }
 </script>
 
 </body>
