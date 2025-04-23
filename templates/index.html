@@ -9,40 +9,18 @@
     body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
     input, button { padding: 8px; font-size: 14px; }
     .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
-    .tab {
-      padding: 6px 12px; background: #e0e0e0; border-radius: 20px;
-      cursor: pointer; display: flex; align-items: center; gap: 6px;
-    }
+    .tab { padding: 6px 12px; background: #e0e0e0; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
     .tab span { font-weight: bold; }
-    .tab .close {
-      background: transparent; border: none; color: red;
-      font-weight: bold; cursor: pointer;
-    }
+    .tab .close { background: transparent; border: none; color: red; font-weight: bold; cursor: pointer; }
     .tab:hover { background: #d4d4d4; }
-    .news-table {
-      margin-top: 20px; border: 1px solid #ccc;
-      padding: 10px; border-radius: 6px; background: #fff;
-    }
-    .trend-container {
-      margin-top: 10px; background: #fff;
-      padding: 15px; border-radius: 6px;
-    }
-    .trend-header {
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    canvas {
-      width: 100% !important;
-      height: 120px !important;
-    }
+    .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
+    .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
+    .trend-header { display: flex; justify-content: space-between; align-items: center; }
+    canvas { width: 100% !important; height: 120px !important; }
     table { width: 100%; border-collapse: collapse; }
-    th, td {
-      border: 1px solid #ccc; padding: 6px; font-size: 13px;
-    }
+    th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
     tr.highlight { background-color: #fff7cc; }
-    button.remove-btn {
-      background: red; color: white; border: none;
-      padding: 4px 8px; cursor: pointer; border-radius: 4px;
-    }
+    button.remove-btn { background: red; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 4px; }
     @media (max-width: 768px) {
       table, thead, tbody, th, td, tr { display: block; }
       td { border: none; padding: 4px 0; }
@@ -59,12 +37,30 @@
 <div id="trend-charts"></div>
 
 <script>
+const positiveWords = ["급등", "호재", "성장", "기대", "회복", "반등", "돌파", "상승"];
+const negativeWords = ["하락", "폭락", "우려", "불안", "급락", "추락", "붕괴"];
+
+function analyzeSentiment(text) {
+  const lower = text.toLowerCase();
+  const pos = positiveWords.some(w => lower.includes(w));
+  const neg = negativeWords.some(w => lower.includes(w));
+  if (pos && !neg) return "pos";
+  if (neg && !pos) return "neg";
+  return "neu";
+}
+
+function sentimentLabel(type) {
+  if (type === "pos") return "긍정";
+  if (type === "neg") return "부정";
+  return "중립";
+}
+
+let tableCount = 0;
+const maxTables = 15;
 const savedKeywordsKey = "savedKeywords";
 const keywordFreqKey = "keywordFreq";
 const lastHashes = {};
 const lastLinks = {};
-let tableCount = 0;
-const maxTables = 15;
 
 window.onload = () => {
   const keywords = getSortedTopKeywords();
@@ -114,20 +110,23 @@ function searchNews(keyword = "", save = true) {
           <button class="remove-btn" onclick="removeTableOnly('${div.id}')">삭제</button>
         </h3>
         <table>
-          <thead><tr><th>제목</th><th>요약</th><th>출처</th><th>날짜</th></tr></thead>
+          <thead><tr><th>제목</th><th>출처</th><th>날짜</th><th>감성</th></tr></thead>
           <tbody>`;
 
       data.forEach(item => {
         const raw = item.description || item.title || "";
         const clean = raw.replace(/<[^>]+>/g, "");
-        const short = clean.length > 60 ? clean.substring(0, 60) + "..." : clean;
+        const sentiment = analyzeSentiment(item.title + " " + clean);
+        const sentimentIcon = sentiment === "pos" ? "▲" : sentiment === "neg" ? "▼" : "●";
+        const sentimentColor = sentiment === "pos" ? "green" : sentiment === "neg" ? "red" : "gray";
         const highlightClass = !prevLinks.includes(item.link) ? "highlight" : "";
+
         html += `
           <tr class="${highlightClass}">
             <td><a href="${item.link}" target="_blank">${item.title}</a></td>
-            <td>${short}</td>
             <td>${item.source}</td>
             <td>${item.date}</td>
+            <td style="color:${sentimentColor}; font-weight:bold;">${sentimentIcon} ${sentimentLabel(sentiment)}</td>
           </tr>`;
       });
 
