@@ -266,33 +266,26 @@ function renderTrendChart(keyword, period = "30d") {
         document.getElementById("trend-charts").appendChild(container);
       }
 
-      const ctx = canvas.getContext("2d");
-      new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: data.map(d => d.date),
-          datasets: [{
-            label: keyword + " 검색 비율",
-            data: data.map(d => d.ratio),
-            borderColor: "rgba(75, 192, 192, 1)",
-            backgroundColor: "rgba(75, 192, 192, 0.1)",
-            fill: true,
-            tension: 0.3
-          }]
-        },
-        options: {
-          scales: {
-            x: { ticks: { maxTicksLimit: 6 } },
-            y: { beginAtZero: true, suggestedMax: maxY }
-          },
-          plugins: {
-            legend: { display: false }
-          },
-          responsive: true,
-          maintainAspectRatio: false
-        }
-      });
-    });
+    new Chart(ctx, {
+      type: "line",
+      data: { ... },
+      options: {
+        plugins: {
+        tooltip: {
+        enabled: true,
+        mode: 'index',
+        intersect: false
+      },
+      legend: { display: false }
+    },
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      x: { ticks: { maxTicksLimit: 6 } },
+      y: { beginAtZero: true, suggestedMax: maxY }
+    }
+  }
+});
 }
 </script>
 
