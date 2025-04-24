@@ -16,7 +16,7 @@
     .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
     .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
     .trend-header { display: flex; justify-content: space-between; align-items: center; }
-    canvas { width: 100% !important; height: 120px !important; }
+    canvas { width: 100% !important; height: 200px !important; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
     tr.highlight { background-color: #fff7cc; }
@@ -37,8 +37,12 @@
 <div id="trend-charts"></div>
 
 <script>
-const positiveWords = ["급등", "호재", "성장", "기대", "회복", "반등", "돌파", "상승"];
-const negativeWords = ["하락", "폭락", "우려", "불안", "급락", "추락", "붕괴"];
+const positiveWords = ["급등", "상승", "반등", "회복", "호재", "성장", "기대", "돌파", "기록", "강세",
+  "강화", "지속", "급증", "전망", "유망", "호황", "최고", "신기록", "호조", "개선",
+  "이익", "확대", "강력", "선전", "성공", "기회", "활황", "진전", "안정", "낙관"];
+const negativeWords = ["하락", "폭락", "급락", "추락", "붕괴", "우려", "불안", "침체", "위기", "적자",
+  "약세", "악재", "손실", "하향", "둔화", "급감", "패배", "실패", "취약", "불확실",
+  "경고", "경색", "중단", "철수", "하회", "감소", "부진", "혼조", "타격", "혼란"];
 
 function analyzeSentiment(text) {
   const lower = text.toLowerCase();
