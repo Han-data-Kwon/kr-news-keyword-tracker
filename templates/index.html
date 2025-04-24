@@ -16,7 +16,7 @@
     .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
     .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
     .trend-header { display: flex; justify-content: space-between; align-items: center; }
-    canvas { width: 100% !important; height: 200px !important; }
+    canvas { width: 100% !important; height: 220px !important; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
     tr.highlight { background-color: #fff7cc; }
@@ -266,26 +266,38 @@ function renderTrendChart(keyword, period = "30d") {
         document.getElementById("trend-charts").appendChild(container);
       }
 
-    new Chart(ctx, {
-      type: "line",
-      data: { ... },
-      options: {
-        plugins: {
-        tooltip: {
-        enabled: true,
-        mode: 'index',
-        intersect: false
-      },
-      legend: { display: false }
-    },
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: { ticks: { maxTicksLimit: 6 } },
-      y: { beginAtZero: true, suggestedMax: maxY }
-    }
-  }
-});
+      const ctx = canvas.getContext("2d");
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: data.map(d => d.date),
+          datasets: [{
+            label: keyword + " 검색 비율",
+            data: data.map(d => d.ratio),
+            borderColor: "rgba(75, 192, 192, 1)",
+            backgroundColor: "rgba(75, 192, 192, 0.1)",
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          plugins: {
+            tooltip: {
+              enabled: true,
+              mode: 'index',
+              intersect: false
+            },
+            legend: { display: false }
+          },
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: { ticks: { maxTicksLimit: 6 } },
+            y: { beginAtZero: true, suggestedMax: maxY }
+          }
+        }
+      });
+    });
 }
 </script>
 
