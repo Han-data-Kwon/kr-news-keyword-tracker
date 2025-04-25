@@ -103,16 +103,13 @@ def search_company():
     if not keyword:
         return jsonify([])
 
-    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
-    params = {
-        "serviceKey": NPS_API_KEY,
-        "wkplNm": keyword,
-        "numOfRows": 10,
-        "pageNo": 1
-    }
+    url = (
+    f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
+    f"?serviceKey={NPS_API_KEY}&wkplNm={keyword}&numOfRows=10&pageNo=1"
+)
 
-    try:
-        res = requests.get(url, params=params)
+try:
+        res = requests.get(url)
         res.raise_for_status()
         root = ET.fromstring(res.content)
 
