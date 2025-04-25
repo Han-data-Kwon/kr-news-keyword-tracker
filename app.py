@@ -1,22 +1,22 @@
-import os
-import requests
-from flask import Flask, request, jsonify, render_template
-from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
+import requests
+import os
+import xml.etree.ElementTree as ET
 
 app = Flask(__name__)
 CORS(app)
 
-# 환경변수에서 Client ID / Secret 불러오기 (Render 환경 변수 또는 .env)
+# 환경변수
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
+NPS_API_KEY = os.getenv("NPS_API_KEY")  # 국민연금공단 API 키
 
-# --- 메인 페이지 ---
 @app.route("/")
 def home():
     return render_template("index.html")
 
-# --- 네이버 뉴스 검색 API ---
+# --- 국내 뉴스 검색기 API ---
 @app.route("/api/search_news")
 def search_news():
     keyword = request.args.get("q", "").strip()
@@ -37,7 +37,6 @@ def search_news():
     try:
         res = requests.get(url, headers=headers, params=params)
         data = res.json().get("items", [])
-
         results = []
         for item in data:
             results.append({
@@ -45,64 +44,51 @@ def search_news():
                 "link": item.get("link"),
                 "source": item.get("originallink") or item.get("link"),
                 "date": item.get("pubDate", "")
-                # 네이버 뉴스 API에서는 description 필드가 제공되지 않을 수 있음.
             })
         return jsonify(results)
-
     except Exception as e:
-        print("NAVER 뉴스 API 오류:", e)
+        print("NAVER API 오류:", e)
         return jsonify([])
 
-# --- 네이버 데이터랩 검색어 트렌드 API ---
-@app.route("/api/trend")
-def get_trend():
-    keyword = request.args.get("q")
-    period = request.args.get("period", "30d")  # 기본 30일, "1y" 옵션 등
-
+# --- 국민연금공단 사업장 상세정보 API ---
+@app.route("/api/search_company")
+def search_company():
+    keyword = request.args.get("q", "").strip()
     if not keyword:
-        return jsonify({"error": "Missing keyword"}), 400
+        return jsonify([])
 
-    # 날짜 계산 (기본 최근 30일 또는 최근 1년)
-    end_date = datetime.today()
-    if period == "1y":
-        start_date = end_date - timedelta(days=365)
-    else:
-        start_date = end_date - timedelta(days=30)
-
-    start_str = start_date.strftime("%Y-%m-%d")
-    end_str = end_date.strftime("%Y-%m-%d")
-
-    url = "https://openapi.naver.com/v1/datalab/search"
-    headers = {
-        "X-Naver-Client-Id": NAVER_CLIENT_ID,
-        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "startDate": start_str,
-        "endDate": end_str,
-        "timeUnit": "date",
-        "keywordGroups": [
-            {
-                "groupName": keyword,
-                "keywords": [keyword]
-            }
-        ]
+    url = "https://apis.data.go.kr/B090041/openapi/service/NpsBplcInfoInqireService/getDetailInfoSearch"
+    params = {
+        "serviceKey": NPS_API_KEY,
+        "wkplNm": keyword
     }
 
     try:
-        res = requests.post(url, headers=headers, json=payload)
-        res.raise_for_status()
-        data = res.json()
-        # 데이터랩 API는 'results' 키에 결과가 있으며, 첫 그룹의 'data'에 날짜별 검색 비율 정보가 있음
-        result = [{"date": d["period"], "ratio": d["ratio"]} for d in data["results"][0]["data"]]
-        return jsonify(result)
+        res = requests.get(url, params=params)
+        tree = ET.fromstring(res.content)
 
+        items = tree.find(".//items")
+        results = []
+        if items is not None:
+            for item in items.findall("item"):
+                results.append({
+                    "name": item.findtext("wkplNm", ""),
+                    "industry": item.findtext("vldtVlKrnNm", ""),
+                    "regDate": item.findtext("adptDt", ""),
+                    "joinCount": item.findtext("jnngpCnt", ""),
+                    "address": item.findtext("wkplRoadNmDtlAddr", ""),
+                    "bizRegNo": item.findtext("bzowrRgstNo", ""),
+                    "resignDate": item.findtext("scsnDt", ""),
+                    "monthlyFee": item.findtext("crrmmNtcAmt", "")
+                })
+        return jsonify(results)
     except Exception as e:
-        print("네이버 데이터랩 트렌드 API 오류:", e)
-        return jsonify({"error": "Failed to fetch trend"}), 500
+        print("국민연금공단 API 오류:", e)
+        return jsonify([])
 
-# --- 앱 실행 ---
+# --- 추후 필요시: 검색 트렌드 연동용 라우터 등 추가 가능 ---
+
+# --- Render 호환 포트 설정 ---
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
