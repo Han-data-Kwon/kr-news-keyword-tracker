@@ -3,24 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>국내 뉴스&트렌드 키워드 검색기</title>
+  <title>국내 뉴스 & 기업 정보 키워드 검색기</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
     input, button { padding: 8px; font-size: 14px; }
+    .tabs { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; }
+    .tab-button {
+      padding: 8px 16px;
+      background: #ddd;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .tab-button.active { background: #4285f4; color: white; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
     .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
     .tab { padding: 6px 12px; background: #e0e0e0; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
     .tab span { font-weight: bold; }
     .tab .close { background: transparent; border: none; color: red; font-weight: bold; cursor: pointer; }
     .tab:hover { background: #d4d4d4; }
+
     .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
     .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
     .trend-header { display: flex; justify-content: space-between; align-items: center; }
-    canvas { width: 100% !important; height: 220px !important; }
+
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
     tr.highlight { background-color: #fff7cc; }
-    button.remove-btn { background: red; color: white; border: none; padding: 4px 8px; cursor: pointer; border-radius: 4px; }
+
+    button.remove-btn, .delete-btn {
+      background: red; color: white; border: none;
+      padding: 4px 8px; cursor: pointer; border-radius: 4px;
+    }
+
     @media (max-width: 768px) {
       table, thead, tbody, th, td, tr { display: block; }
       td { border: none; padding: 4px 0; }
@@ -29,16 +49,48 @@
 </head>
 <body>
 
-<h2>국내 뉴스 키워드 검색기</h2>
-<div class="tab-bar" id="favorite-tabs"></div>
-<input type="text" id="keyword" placeholder="예: 복지, B2B, 트럼프" />
-<button onclick="searchNews()">검색</button>
-<div id="news-container"></div>
-<div id="trend-charts"></div>
+<h2>국내 뉴스 & 기업 정보 키워드 검색기</h2>
+
+<div class="tabs">
+  <button class="tab-button active" onclick="switchTab('news-section', this)">뉴스 검색</button>
+  <button class="tab-button" onclick="switchTab('company-section', this)">기업 정보 검색</button>
+</div>
+
+<!-- 뉴스 검색 탭 -->
+<div id="news-section" class="section active">
+  <div class="tab-bar" id="favorite-tabs"></div>
+  <input type="text" id="keyword" placeholder="예: 복지, B2B, 트럼프" />
+  <button onclick="searchNews()">검색</button>
+  <div id="news-container"></div>
+  <div id="trend-charts"></div>
+</div>
+
+<!-- 기업 정보 검색 탭 -->
+<div id="company-section" class="section">
+  <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
+  <button onclick="searchCompany()">검색</button>
+  <table style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>사업장명</th>
+        <th>업종</th>
+        <th>등록일</th>
+        <th>가입자수</th>
+        <th>주소</th>
+        <th>삭제</th>
+      </tr>
+    </thead>
+    <tbody id="companyResults">
+      <tr class="empty-text-row">
+        <td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
 <script>
-const positiveWords = ["급등", "상승", "반등", "회복", "호재", "성장", "기대", "돌파", "기록", "강세", "강화", "지속", "급증", "전망", "유망", "호황", "최고", "신기록", "호조", "개선", "이익", "확대", "강력", "선전", "성공", "기회", "활황", "진전", "안정", "낙관"];
-const negativeWords = ["하락", "폭락", "급락", "추락", "붕괴", "우려", "불안", "침체", "위기", "적자", "약세", "악재", "손실", "하향", "둔화", "급감", "패배", "실패", "취약", "불확실", "경고", "경색", "중단", "철수", "하회", "감소", "부진", "혼조", "타격", "혼란"];
+const positiveWords = ["급등", "호재", "성장", "기대", "회복", "반등", "돌파", "상승", "강세", "개선", "확대", "유망", "안정", "기록", "신기록", "최고"];
+const negativeWords = ["하락", "폭락", "급락", "추락", "붕괴", "우려", "불안", "침체", "위기", "적자", "악재", "둔화", "패배", "실패", "감소", "하회", "경고"];
 
 function analyzeSentiment(text) {
   const lower = text.toLowerCase();
@@ -76,6 +128,13 @@ setInterval(() => {
   keywords.forEach(k => refreshNews(k));
 }, 10 * 60 * 1000);
 
+function switchTab(id, button) {
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  button.classList.add('active');
+}
+
 function searchNews(keyword = "", save = true) {
   if (!keyword) keyword = document.getElementById("keyword").value.trim();
   if (!keyword) return alert("키워드를 입력해주세요.");
@@ -85,14 +144,11 @@ function searchNews(keyword = "", save = true) {
     .then(res => res.ok ? res.json() : Promise.reject(res))
     .then(data => {
       if (!data.length) return alert("뉴스 결과가 없습니다.");
-
       const hash = data.map(d => d.link).join(",");
       const prevLinks = lastLinks[keyword] || [];
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
-
       if (isNew) alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
-
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
 
@@ -162,12 +218,9 @@ function refreshNews(keyword) {
       const prevLinks = lastLinks[keyword] || [];
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
-
       if (isNew) alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
-
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
-
       const div = document.getElementById("table-" + keyword);
       if (div) div.remove();
       tableCount--;
@@ -198,18 +251,15 @@ function renderTabs() {
   const keywords = getSortedTopKeywords();
   const container = document.getElementById("favorite-tabs");
   container.innerHTML = "";
-
   keywords.forEach(k => {
     const tab = document.createElement("div");
     tab.className = "tab";
-
     const span = document.createElement("span");
     span.innerText = k;
     span.onclick = () => {
       searchNews(k, false);
       renderTrendChart(k);
     };
-
     const closeBtn = document.createElement("button");
     closeBtn.className = "close";
     closeBtn.innerText = "x";
@@ -217,7 +267,6 @@ function renderTabs() {
       e.stopPropagation();
       removeKeywordCompletely(k);
     };
-
     tab.appendChild(span);
     tab.appendChild(closeBtn);
     container.appendChild(tab);
@@ -235,7 +284,6 @@ function renderTrendChart(keyword, period = "30d") {
     .then(res => res.json())
     .then(data => {
       let maxY = Math.max(...data.map(d => d.ratio), 100);
-
       let container = document.getElementById("trend-" + keyword);
       let canvas;
 
@@ -281,23 +329,55 @@ function renderTrendChart(keyword, period = "30d") {
           }]
         },
         options: {
-          plugins: {
-            tooltip: {
-              enabled: true,
-              mode: 'index',
-              intersect: false
-            },
-            legend: { display: false }
-          },
-          responsive: true,
-          maintainAspectRatio: false,
           scales: {
             x: { ticks: { maxTicksLimit: 6 } },
             y: { beginAtZero: true, suggestedMax: maxY }
-          }
+          },
+          plugins: {
+            legend: { display: false }
+          },
+          responsive: true,
+          maintainAspectRatio: false
         }
       });
     });
+}
+
+// 기업 정보 검색 탭
+function searchCompany() {
+  const keyword = document.getElementById("companyKeyword").value.trim();
+  if (!keyword) return alert('기업명을 입력해주세요.');
+
+  const exampleData = {
+    사업장명: keyword + ' 주식회사',
+    업종코드명: 'IT 서비스',
+    등록일: '2021-08-15',
+    가입자수: Math.floor(Math.random() * 300 + 30),
+    주소: '서울시 강남구 테헤란로 101'
+  };
+
+  const row = document.createElement("tr");
+  row.innerHTML = `
+    <td>${exampleData.사업장명}</td>
+    <td>${exampleData.업종코드명}</td>
+    <td>${exampleData.등록일}</td>
+    <td>${exampleData.가입자수}</td>
+    <td>${exampleData.주소}</td>
+    <td><button class="delete-btn" onclick="this.closest('tr').remove(); checkCompanyEmpty();">삭제</button></td>
+  `;
+  const tbody = document.getElementById("companyResults");
+  document.querySelector('.empty-text-row')?.remove();
+  tbody.appendChild(row);
+}
+
+function checkCompanyEmpty() {
+  const tbody = document.getElementById("companyResults");
+  if (!tbody.querySelector("tr")) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.classList.add("empty-text-row");
+    emptyRow.innerHTML = `<td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
+    tbody.appendChild(emptyRow);
+  }
 }
 </script>
 
