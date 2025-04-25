@@ -2,15 +2,9 @@ import os import requests import xml.etree.ElementTree as ET from flask import F
 
 app = Flask(name) CORS(app)
 
-환경변수에서 Client ID / Secret / NPS API Key 불러오기
-
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID") NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET") NPS_API_KEY = os.getenv("NPS_API_KEY")
 
---- 메인 페이지 ---
-
 @app.route("/") def home(): return render_template("index.html")
-
---- 네이버 뉴스 검색 API ---
 
 @app.route("/api/search_news") def search_news(): keyword = request.args.get("q", "").strip() if not keyword: return jsonify([])
 
@@ -42,8 +36,6 @@ try:
 except Exception as e:
     print("NAVER 뉴스 API 오류:", e)
     return jsonify([])
-
---- 네이버 데이터랩 검색어 트렌드 API ---
 
 @app.route("/api/trend") def get_trend(): keyword = request.args.get("q") period = request.args.get("period", "30d")
 
@@ -88,15 +80,13 @@ except Exception as e:
     print("네이버 데이터랩 트렌드 API 오류:", e)
     return jsonify({"error": "Failed to fetch trend"}), 500
 
---- 국민연금공단 사업장 상세정보 조회 API ---
-
 @app.route("/api/search_company") def search_company(): keyword = request.args.get("q", "").strip() if not keyword: return jsonify([])
 
 url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
 params = {
     "serviceKey": NPS_API_KEY,
     "wkplNm": keyword,
-    "numOfRows": 1,
+    "numOfRows": 20,
     "pageNo": 1
 }
 
@@ -105,23 +95,23 @@ try:
     res.raise_for_status()
     root = ET.fromstring(res.content)
 
-    item = root.find(".//item")
-    if item is None:
-        return jsonify([])
+    items = root.findall(".//item")
+    results = []
 
-    data = {
-        "사업장명": item.findtext("wkplNm", default=""),
-        "업종명": item.findtext("vldtVlKrnNm", default=""),
-        "등록일": item.findtext("adptDt", default=""),
-        "주소": item.findtext("wkplRoadNmDtlAddr", default=""),
-        "가입자수": item.findtext("jnngpCnt", default="")
-    }
-    return jsonify([data])
+    for item in items:
+        data = {
+            "사업장명": item.findtext("wkplNm", default=""),
+            "업종명": item.findtext("vldtVlKrnNm", default=""),
+            "등록일": item.findtext("adptDt", default=""),
+            "주소": item.findtext("wkplRoadNmDtlAddr", default=""),
+            "가입자수": item.findtext("jnngpCnt", default="")
+        }
+        results.append(data)
+
+    return jsonify(results)
 
 except Exception as e:
     print("NPS API 오류:", e)
     return jsonify([])
-
---- 앱 실행 ---
 
 if name == "main": port = int(os.environ.get("PORT", 5000)) app.run(host="0.0.0.0", port=port)
