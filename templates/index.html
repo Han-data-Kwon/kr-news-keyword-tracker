@@ -301,59 +301,5 @@ function renderTrendChart(keyword, period = "30d") {
 }
 </script>
 
-<!-- 기업 정보 검색기 영역 -->
-<div id="company-section" style="display:none; margin-top: 40px;">
-  <h2>기업 정보 검색기</h2>
-  <input type="text" id="companyKeyword" placeholder="예: 삼성, 한화, LG" />
-  <button onclick="searchCompany()">검색</button>
-  <div id="company-container" style="margin-top: 20px;"></div>
-</div>
-
-<script>
-function toggleCompanyTab() {
-  const sec = document.getElementById("company-section");
-  sec.style.display = sec.style.display === "none" ? "block" : "none";
-}
-
-function searchCompany() {
-  const keyword = document.getElementById("companyKeyword").value.trim();
-  if (!keyword) return alert("기업명을 입력해주세요.");
-
-  fetch(`/api/search_company?q=${encodeURIComponent(keyword)}`)
-    .then(res => res.json())
-    .then(data => {
-      if (!data.length) return alert("검색 결과가 없습니다.");
-      const div = document.createElement("div");
-      div.className = "news-table";
-      div.id = `company-${Date.now()}`;
-      let html = `<h3>“${keyword}” 관련 사업장
-        <button class="remove-btn" onclick="this.closest('.news-table').remove()">삭제</button>
-      </h3>`;
-      html += `
-        <table>
-          <thead>
-            <tr><th>사업장명</th><th>업종</th><th>등록일</th><th>임직원수</th><th>주소</th></tr>
-          </thead>
-          <tbody>`;
-      data.forEach(item => {
-        html += `<tr>
-          <td>${item.name}</td>
-          <td>${item.industry}</td>
-          <td>${item.regDate}</td>
-          <td>${item.joinCount}</td>
-          <td>${item.address}</td>
-        </tr>`;
-      });
-      html += `</tbody></table>`;
-      div.innerHTML = html;
-      document.getElementById("company-container").prepend(div);
-    })
-    .catch(e => {
-      console.error("API 오류:", e);
-      alert("API 호출 중 문제가 발생했습니다.");
-    });
-}
-</script>
-
 </body>
 </html>
