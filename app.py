@@ -1,4 +1,8 @@
-import os import requests import xml.etree.ElementTree as ET from flask import Flask, request, jsonify, render_template from datetime import datetime, timedelta from flask_cors import CORS
+import os 
+import requests
+import xml.etree.ElementTree as ET from flask import Flask, request, jsonify, render_template 
+from datetime import datetime, 
+timedelta from flask_cors import CORS
 
 app = Flask(name) CORS(app)
 
