@@ -353,39 +353,40 @@ function renderTrendChart(keyword, period = "30d") {
 }
 
 // 기업 정보 검색 탭
-function searchCompany() {
+  function searchCompany() {
   const keyword = document.getElementById("companyKeyword").value.trim();
   if (!keyword) return alert('기업명을 입력해주세요.');
 
-  const exampleData = {
-    사업장명: keyword + ' 는 훼잌!!',
-    업종코드명: 'IT 서비스',
-    등록일: '2021-08-15',
-    가입자수: Math.floor(Math.random() * 300 + 30),
-    주소: '서울시 강남구 테헤란로 101'
-  };
+  fetch(`/api/search_company?q=${encodeURIComponent(keyword)}`)
+    .then(res => res.json())
+    .then(data => {
+      const tbody = document.getElementById("companyResults");
+      tbody.innerHTML = "";
 
-  const row = document.createElement("tr");
-  row.innerHTML = `
-    <td>${exampleData.사업장명}</td>
-    <td>${exampleData.업종코드명}</td>
-    <td>${exampleData.등록일}</td>
-    <td>${exampleData.가입자수}</td>
-    <td>${exampleData.주소}</td>
-    <td><button class="delete-btn" onclick="this.closest('tr').remove(); checkCompanyEmpty();">삭제</button></td>
-  `;
-  const tbody = document.getElementById("companyResults");
-  document.querySelector('.empty-text-row')?.remove();
-  tbody.appendChild(row);
-}
+      if (!data.length) {
+        tbody.innerHTML = `<tr class="empty-text-row">
+          <td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
+        </tr>`;
+        return;
+      }
 
-function checkCompanyEmpty() {
-  const tbody = document.getElementById("companyResults");
-  if (!tbody.querySelector("tr")) {
-    const emptyRow = document.createElement("tr");
-    emptyRow.classList.add("empty-text-row");
-    emptyRow.innerHTML = `<td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
-    tbody.appendChild(emptyRow);
+      data.forEach(item => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${item["사업장명"]}</td>
+          <td>${item["업종명"]}</td>
+          <td>${item["등록일"]}</td>
+          <td>${item["가입자수"]}</td>
+          <td>${item["주소"]}</td>
+          <td><button class="delete-btn" onclick="this.closest('tr').remove(); checkCompanyEmpty();">삭제</button></td>
+        `;
+        tbody.appendChild(row);
+      });
+    })
+    .catch(err => {
+      console.error("기업 정보 조회 실패:", err);
+      alert("기업 정보를 불러오는 데 실패했습니다.");
+    });
   }
 }
 </script>
