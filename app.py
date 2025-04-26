@@ -1,6 +1,7 @@
 import os
 import requests
 import xml.etree.ElementTree as ET
+import urllib.parse
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 from flask_cors import CORS
