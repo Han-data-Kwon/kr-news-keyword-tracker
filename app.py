@@ -104,11 +104,11 @@ def search_company():
         return jsonify([])
 
     url = (
-    f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
-    f"?serviceKey={NPS_API_KEY}&wkplNm={keyword}&numOfRows=10&pageNo=1"
-)
+        f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
+        f"?serviceKey={NPS_API_KEY}&wkplNm={keyword}&numOfRows=10&pageNo=1"
+    )
 
-try:
+    try:
         res = requests.get(url)
         res.raise_for_status()
         root = ET.fromstring(res.content)
