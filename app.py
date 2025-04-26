@@ -107,8 +107,8 @@ def search_company():
     encoded_service_key = urllib.parse.quote(NPS_API_KEY, safe='')
 
     url = (
-        f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getDetailInfoSearch"
-        f"?serviceKey={encoded_service_key}&wkplNm={keyword}&numOfRows=10&pageNo=1"
+        f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getBassInfoSearch"
+        f"?serviceKey={encoded_service_key}&wkplNm={urllib.parse.quote(keyword)}&numOfRows=10&pageNo=1"
     )
 
     try:
