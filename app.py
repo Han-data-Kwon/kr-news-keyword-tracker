@@ -104,11 +104,10 @@ def search_company():
     if not keyword:
         return jsonify([])
 
-    encoded_service_key = urllib.parse.quote(NPS_API_KEY, safe='')
-
+    # serviceKey는 인코딩 없이 그대로 삽입, keyword만 인코딩
     url = (
         f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getBassInfoSearch"
-        f"?serviceKey={encoded_service_key}&wkplNm={urllib.parse.quote(keyword)}&numOfRows=10&pageNo=1"
+        f"?serviceKey={NPS_API_KEY}&wkplNm={urllib.parse.quote(keyword)}&numOfRows=10&pageNo=1"
     )
 
     try:
