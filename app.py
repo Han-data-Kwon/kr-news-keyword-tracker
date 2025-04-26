@@ -112,7 +112,8 @@ def search_company():
     )
 
     try:
-        res = requests.get(url)
+        # 여기 핵심! verify=False 추가
+        res = requests.get(url, verify=False)
         res.raise_for_status()
         root = ET.fromstring(res.content)
 
