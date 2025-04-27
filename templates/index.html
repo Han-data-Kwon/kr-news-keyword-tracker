@@ -77,20 +77,20 @@
 <div id="company-section" class="section">
   <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
   <button onclick="searchCompany()">검색</button>
+  <button onclick="downloadTable()">테이블 다운로드</button>
   <table style="margin-top: 20px;">
     <thead>
       <tr>
-        <th>사업장명</th>
-        <th>업종명</th>
-        <th>등록일</th>
-        <th>가입자수</th>
-        <th>주소</th>
+        <th>사업자명</th>
+        <th>임직원수</th>
+        <th>매출(억원)</th>
+        <th>사업장주소</th>
         <th>삭제</th>
       </tr>
     </thead>
     <tbody id="companyResults">
       <tr class="empty-text-row">
-        <td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
+        <td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
       </tr>
     </tbody>
   </table>
@@ -142,7 +142,11 @@ function switchTab(id, button) {
   document.getElementById(id).classList.add('active');
   button.classList.add('active');
 }
-
+  
+function formatNumber(num) {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+  
 function searchNews(keyword = "", save = true) {
   if (!keyword) keyword = document.getElementById("keyword").value.trim();
   if (!keyword) return alert("키워드를 입력해주세요.");
@@ -351,42 +355,94 @@ function renderTrendChart(keyword, period = "30d") {
     });
 }
 
-// 기업 정보 검색 탭
-  function searchCompany() {
+// Mock 데이터 생성
+function generateMockCompany(keyword) {
+  const names = [`${keyword} 주식회사`, `${keyword} 테크`, `${keyword} 코퍼레이션`];
+  const randomName = names[Math.floor(Math.random() * names.length)];
+  const employees = Math.floor(Math.random() * 10000) + 100;
+  const sales = Math.floor(Math.random() * 10000) + 100;
+  const address = `서울특별시 ${["강남구", "서초구", "마포구", "송파구"][Math.floor(Math.random() * 4)]}`;
+  
+  return {
+    사업자명: randomName,
+    임직원수: employees,
+    매출: sales,
+    사업장주소: address
+  };
+}
+
+// 검색한 기업 리스트 저장
+let companies = [];
+
+function searchCompany() {
   const keyword = document.getElementById("companyKeyword").value.trim();
   if (!keyword) return alert('기업명을 입력해주세요.');
 
-  fetch(`/api/search_company?q=${encodeURIComponent(keyword)}`)
-    .then(res => res.json())
-    .then(data => {
-      const tbody = document.getElementById("companyResults");
-      tbody.innerHTML = "";
+  const company = generateMockCompany(keyword);
+  companies.push(company);
+  renderCompanyTable(keyword);
+}
 
-      if (!data.length) {
-        tbody.innerHTML = `<tr class="empty-text-row">
-          <td colspan="6" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
-        </tr>`;
-        return;
-      }
+// 기업 테이블 렌더링
+function renderCompanyTable(highlight = "") {
+  const tbody = document.getElementById("companyResults");
+  tbody.innerHTML = "";
 
-      data.forEach(item => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${item["사업장명"]}</td>
-          <td>${item["업종명"]}</td>
-          <td>${item["등록일"]}</td>
-          <td>${item["가입자수"]}</td>
-          <td>${item["주소"]}</td>
-          <td><button class="delete-btn" onclick="this.closest('tr').remove(); checkCompanyEmpty();">삭제</button></td>
-        `;
-        tbody.appendChild(row);
-      });
-    })
-    .catch(err => {
-      console.error("기업 정보 조회 실패:", err);
-      alert("기업 정보를 불러오는 데 실패했습니다.");
-    });
+  if (!companies.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.classList.add("empty-text-row");
+    emptyRow.innerHTML = `<td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
+    tbody.appendChild(emptyRow);
+    return;
   }
+
+  // 임직원수 기준 내림차순 정렬
+  companies.sort((a, b) => b.임직원수 - a.임직원수);
+
+  companies.forEach((c, idx) => {
+    const row = document.createElement("tr");
+    const highlightName = highlight && c.사업자명.includes(highlight) ?
+      c.사업자명.replaceAll(highlight, `<mark>${highlight}</mark>`) : c.사업자명;
+    
+    row.innerHTML = `
+      <td>${highlightName}</td>
+      <td>${formatNumber(c.임직원수)}</td>
+      <td>${formatNumber(c.매출)}</td>
+      <td>${c.사업장주소}</td>
+      <td><button class="delete-btn" onclick="removeCompany(${idx})">삭제</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// 삭제 기능
+function removeCompany(index) {
+  companies.splice(index, 1);
+  renderCompanyTable();
+}
+
+// 테이블 다운로드 기능
+function downloadTable() {
+  if (!companies.length) {
+    alert("다운로드할 데이터가 없습니다.");
+    return;
+  }
+
+  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
+  companies.forEach(c => {
+    csv += `"${c.사업자명}",${c.임직원수},${c.매출},"${c.사업장주소}"\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", "기업정보.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 </script>
 
 </body>
