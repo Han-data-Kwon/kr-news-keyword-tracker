@@ -422,20 +422,21 @@ function removeCompany(index) {
 }
 
 // 테이블 다운로드 기능
-function downloadTable() {
-  if (!companies.length) {
+function downloadCompanyTable() {
+  if (!companyData.length) {
     alert("다운로드할 데이터가 없습니다.");
     return;
   }
 
-  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
-  companies.forEach(c => {
-    csv += `"${c.사업자명}",${c.임직원수},${c.매출},"${c.사업장주소}"\n`;
+  let csv = "사업장명,업종명,등록일,가입자수,주소\n";
+  companyData.forEach(item => {
+    csv += `"${item["사업장명"]}","${item["업종명"]}","${item["등록일"]}",${item["가입자수"]},"${item["주소"]}"\n`;
   });
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+  const BOM = "\uFEFF"; // [추가] UTF-8 BOM
+  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" }); // [수정] BOM 추가
 
+  const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.setAttribute("download", "기업정보.csv");
