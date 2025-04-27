@@ -430,7 +430,7 @@ function downloadCompanyTable() {
 
   let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
   companies.forEach(item => {
-    csv += `"${item["사업장명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
+    csv += `"${item["사업자명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
   });
 
   const BOM = "\uFEFF"; // [추가] UTF-8 BOM
