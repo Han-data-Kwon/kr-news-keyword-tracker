@@ -423,14 +423,14 @@ function removeCompany(index) {
 
 // 테이블 다운로드 기능
 function downloadCompanyTable() {
-  if (!companyData.length) {
+  if (!companies.length) {
     alert("다운로드할 데이터가 없습니다.");
     return;
   }
 
-  let csv = "사업장명,업종명,등록일,가입자수,주소\n";
-  companyData.forEach(item => {
-    csv += `"${item["사업장명"]}","${item["업종명"]}","${item["등록일"]}",${item["가입자수"]},"${item["주소"]}"\n`;
+  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
+  companies.forEach(item => {
+    csv += `"${item["사업장명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
   });
 
   const BOM = "\uFEFF"; // [추가] UTF-8 BOM
