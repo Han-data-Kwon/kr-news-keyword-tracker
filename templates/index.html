@@ -347,10 +347,14 @@ function renderTrendChart(keyword, period = "30d") {
           },
           plugins: {
             legend: { display: false }
-          },
-          responsive: true,
-          maintainAspectRatio: false
-        }
+        },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        responsive: true,
+        maintainAspectRatio: false
+      }
       });
     });
 }
