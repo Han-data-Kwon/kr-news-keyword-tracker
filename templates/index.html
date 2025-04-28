@@ -170,7 +170,9 @@ function searchNews(keyword = "", save = true) {
       const prevLinks = lastLinks[keyword] || [];
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
-      if (isNew) alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+      if (isNew && document.getElementById('news-section').classList.contains('active')) {
+          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+          }
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
 
