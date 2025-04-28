@@ -123,6 +123,13 @@ const lastHashes = {};
 const lastLinks = {};
 
 window.onload = () => {
+  // [추가] 마지막에 열었던 탭 기억해서 복원
+  const savedTab = localStorage.getItem("currentTab") || "news-section";
+  const savedButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
+  if (savedButton) {
+    switchTab(savedTab, savedButton);
+  }
+
   const keywords = getSortedTopKeywords();
   keywords.forEach(k => {
     searchNews(k, false);
@@ -141,6 +148,9 @@ function switchTab(id, button) {
   document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   button.classList.add('active');
+
+  // [추가] 현재 선택한 탭 id를 저장
+  localStorage.setItem("currentTab", id);
 }
   
 function formatNumber(num) {
