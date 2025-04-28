@@ -242,7 +242,9 @@ function refreshNews(keyword) {
       const prevLinks = lastLinks[keyword] || [];
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
-      if (isNew) alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+      if (isNew && document.getElementById('news-section').classList.contains('active')) {
+          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+          }
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
       const div = document.getElementById("table-" + keyword);
