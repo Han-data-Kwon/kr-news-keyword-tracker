@@ -30,7 +30,7 @@ def search_news():
     }
     params = {
         "query": keyword,
-        "display": 5,
+        "display": 10,
         "sort": "date"
     }
 
