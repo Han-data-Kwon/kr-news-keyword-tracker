@@ -11,7 +11,9 @@ CORS(app)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NPS_API_KEY = os.getenv("NPS_API_KEY") or "1qLuKD%2FZKvcOlQ3HGhGa%2FL4%2FneRqMWQku55Hipif%2Bes%2BrSS7zuKU0N3UdzYD%2FTRQhWev35wyrtvnbzWc3ohhQA%3D%3D"
+NPS_API_KEY = os.getenv("NPS_API_KEY")
+if not NPS_API_KEY:
+    raise ValueError("환경변수 'NPS_API_KEY'가 설정되어 있지 않습니다.")
 
 
 @app.route("/")
@@ -113,24 +115,24 @@ def search_company_info():
         "pageNo": 1
     }
 
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        return jsonify({"error": "API 호출 실패", "status": response.status_code}), 500
+    try:
+        response = requests.get(url, params=params)
+        if response.status_code != 200:
+            return jsonify({"error": "API 호출 실패", "status": response.status_code}), 500
 
-    # XML 파싱
-    root = ET.fromstring(response.content)
-    items = root.findall(".//item")
-    result = []
-    for item in items:
-        result.append({
-            "사업장명": item.findtext("wkplNm", default=""),
-            "업종코드명": item.findtext("indutyCdNm", default=""),
-            "등록일": item.findtext("regrstDt", default=""),
-            "가입자수": item.findtext("totalPsncnt", default="0"),
-            "도로명주소": item.findtext("rdnmAdr", default="")
-        })
+        root = ET.fromstring(response.content)
+        items = root.findall(".//item")
+        result = []
+        for item in items:
+            result.append({
+                "사업장명": item.findtext("wkplNm", default=""),
+                "업종코드명": item.findtext("indutyCdNm", default=""),
+                "등록일": item.findtext("regrstDt", default=""),
+                "가입자수": item.findtext("totalPsncnt", default="0"),
+                "도로명주소": item.findtext("rdnmAdr", default="")
+            })
 
-    return jsonify(result)
+        return jsonify(result)
 
     except Exception as e:
         print("NPS API 오류:", e)
