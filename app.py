@@ -11,7 +11,8 @@ CORS(app)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NPS_API_KEY = os.getenv("NPS_API_KEY")
+NPS_API_KEY = os.getenv("NPS_API_KEY") or "1qLuKD%2FZKvcOlQ3HGhGa%2FL4%2FneRqMWQku55Hipif%2Bes%2BrSS7zuKU0N3UdzYD%2FTRQhWev35wyrtvnbzWc3ohhQA%3D%3D"
+
 
 @app.route("/")
 def home():
@@ -98,39 +99,38 @@ def get_trend():
         print("네이버 데이터랩 트렌드 API 오류:", e)
         return jsonify({"error": "Failed to fetch trend"}), 500
 
-@app.route("/api/search_company")
-def search_company():
-    keyword = request.args.get("q", "").strip()
+@app.route("/api/nps", methods=["GET"])
+def search_company_info():
+    keyword = request.args.get("keyword")
     if not keyword:
-        return jsonify([])
+        return jsonify({"error": "검색 키워드(keyword)가 필요합니다."}), 400
 
-    encoded_service_key = urllib.parse.quote(NPS_API_KEY, safe='')
+    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getBassInfoSearch"
+    params = {
+        "serviceKey": NPS_API_KEY,
+        "wkplNm": keyword,
+        "numOfRows": 10,
+        "pageNo": 1
+    }
 
-    url = (
-        f"https://apis.data.go.kr/B552015/NpsBplcInfoInqireService/getBassInfoSearch"
-        f"?serviceKey={encoded_service_key}&wkplNm={urllib.parse.quote(keyword)}&numOfRows=10&pageNo=1"
-    )
+    response = requests.get(url, params=params)
+    if response.status_code != 200:
+        return jsonify({"error": "API 호출 실패", "status": response.status_code}), 500
 
-    try:
-        # 여기 핵심! verify=False 추가
-        res = requests.get(url, verify=False)
-        res.raise_for_status()
-        root = ET.fromstring(res.content)
+    # XML 파싱
+    root = ET.fromstring(response.content)
+    items = root.findall(".//item")
+    result = []
+    for item in items:
+        result.append({
+            "사업장명": item.findtext("wkplNm", default=""),
+            "업종코드명": item.findtext("indutyCdNm", default=""),
+            "등록일": item.findtext("regrstDt", default=""),
+            "가입자수": item.findtext("totalPsncnt", default="0"),
+            "도로명주소": item.findtext("rdnmAdr", default="")
+        })
 
-        items = root.findall(".//item")
-        results = []
-
-        for item in items:
-            data = {
-                "사업장명": item.findtext("wkplNm", default=""),
-                "업종명": item.findtext("vldtVlKrnNm", default=""),
-                "등록일": item.findtext("adptDt", default=""),
-                "주소": item.findtext("wkplRoadNmDtlAddr", default=""),
-                "가입자수": item.findtext("jnngpCnt", default="")
-            }
-            results.append(data)
-
-        return jsonify(results)
+    return jsonify(result)
 
     except Exception as e:
         print("NPS API 오류:", e)
