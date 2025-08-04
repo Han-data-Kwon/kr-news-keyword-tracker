@@ -1,143 +1,471 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>국내 뉴스 & 기업 정보 키워드 검색기</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 20px; }
-    .tabs { display: flex; margin-bottom: 10px; cursor: pointer; }
-    .tab { margin-right: 10px; padding: 5px 10px; background: #eee; border-radius: 5px; }
-    .tab.active { background: #333; color: #fff; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; margin-top: 20px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    th, td { border: 1px solid #ccc; padding: 5px; font-size: 14px; }
-    input { padding: 5px; margin-right: 5px; }
-    button { padding: 5px 10px; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    input, button { padding: 8px; font-size: 14px; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    input, button { padding: 8px; font-size: 14px; }
+    /* [추가] 트렌드 차트 캔버스 높이 고정 */
+    canvas {
+      width: 100% !important;
+      height: 200px !important;
+      max-height: 220px;
+    }
+    .tabs { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; }
+    .tab-button {
+      padding: 8px 16px;
+      background: #ddd;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    .tab-button.active { background: #4285f4; color: white; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+    .tab { padding: 6px 12px; background: #e0e0e0; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .tab span { font-weight: bold; }
+    .tab .close { background: transparent; border: none; color: red; font-weight: bold; cursor: pointer; }
+    .tab:hover { background: #d4d4d4; }
+
+    .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
+    .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
+    .trend-header { display: flex; justify-content: space-between; align-items: center; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
+    tr.highlight { background-color: #fff7cc; }
+
+    button.remove-btn, .delete-btn {
+      background: red; color: white; border: none;
+      padding: 4px 8px; cursor: pointer; border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+      table, thead, tbody, th, td, tr { display: block; }
+      td { border: none; padding: 4px 0; }
+    }
   </style>
 </head>
 <body>
-  <h1>국내 뉴스 & 기업 정보 키워드 검색기</h1>
 
-  <!-- 탭 메뉴 -->
-  <ul class="tabs">
-    <li class="tab active" onclick="showTab('news')">뉴스 검색</li>
-    <li class="tab" onclick="showTab('trend')">검색 트렌드</li>
-    <li class="tab" onclick="showTab('company')">기업 정보 검색</li>
-  </ul>
+<h2>국내 뉴스 & 기업 정보 키워드 검색기</h2>
 
-  <!-- 뉴스 검색 탭 -->
-  <div id="news" class="tab-content active">
-    <h2>뉴스 검색</h2>
-    <input type="text" id="newsKeyword" placeholder="검색어 입력">
-    <button onclick="searchNews()">검색</button>
-    <ul id="newsResults"></ul>
-  </div>
+<div class="tabs">
+  <button class="tab-button active" onclick="switchTab('news-section', this)">뉴스 검색</button>
+  <button class="tab-button" onclick="switchTab('company-section', this)">기업 정보 검색</button>
+</div>
 
-  <!-- 트렌드 검색 탭 -->
-  <div id="trend" class="tab-content">
-    <h2>검색 트렌드</h2>
-    <input type="text" id="trendKeyword" placeholder="검색어 입력">
-    <select id="trendPeriod">
-      <option value="30d">30일</option>
-      <option value="1y">1년</option>
-    </select>
-    <button onclick="searchTrend()">조회</button>
-    <table id="trendResults">
-      <thead><tr><th>날짜</th><th>비율</th></tr></thead>
-      <tbody></tbody>
-    </table>
-  </div>
+<!-- 뉴스 검색 탭 -->
+<div id="news-section" class="section active">
+  <div class="tab-bar" id="favorite-tabs"></div>
+  <input type="text" id="keyword" placeholder="예: 복지, B2B, 트럼프" />
+  <button onclick="searchNews()">검색</button>
+  <div id="news-container"></div>
+  <div id="trend-charts"></div>
+</div>
 
-  <!-- 기업 정보 검색 탭 -->
-  <div id="company" class="tab-content">
-    <h2>기업 정보 검색</h2>
-    <input type="text" id="companyKeyword" placeholder="기업명 입력">
-    <button onclick="searchCompany()">검색</button>
-    <table id="companyResults">
-      <thead>
-        <tr>
-          <th>사업장명</th>
-          <th>업종코드명</th>
-          <th>등록일</th>
-          <th>가입자수</th>
-          <th>도로명주소</th>
-          <th>삭제</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+<!-- 기업 정보 검색 탭 -->
+<div id="company-section" class="section">
+  <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
+  <button onclick="searchCompany()">검색</button>
+  <button onclick="downloadCompanyTable()">테이블 다운로드</button>
+  <table style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>사업자명</th>
+        <th>임직원수</th>
+        <th>매출(억원)</th>
+        <th>사업장주소</th>
+        <th>삭제</th>
+      </tr>
+    </thead>
+    <tbody id="companyResults">
+      <tr class="empty-text-row">
+        <td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
-  <script>
-    function showTab(tabId) {
-      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-      document.getElementById(tabId).classList.add('active');
-      event.target.classList.add('active');
+<script>
+const positiveWords = ["급등", "호재", "성장", "기대", "회복", "반등", "돌파", "상승", "강세", "개선", "확대", "유망", "안정", "기록", "신기록", "최고", "인하", "완화", "도입", "승인"];
+const negativeWords = ["하락", "폭락", "급락", "추락", "붕괴", "우려", "불안", "침체", "위기", "적자", "악재", "둔화", "패배", "실패", "감소", "하회", "경고", "연기", "위협", "타격"];
+
+function analyzeSentiment(text) {
+  const lower = text.toLowerCase();
+  const pos = positiveWords.some(w => lower.includes(w));
+  const neg = negativeWords.some(w => lower.includes(w));
+  if (pos && !neg) return "pos";
+  if (neg && !pos) return "neg";
+  return "neu";
+}
+
+function sentimentLabel(type) {
+  if (type === "pos") return "긍정";
+  if (type === "neg") return "부정";
+  return "중립";
+}
+
+let tableCount = 0;
+const maxTables = 15;
+const savedKeywordsKey = "savedKeywords";
+const keywordFreqKey = "keywordFreq";
+const lastHashes = {};
+const lastLinks = {};
+
+window.onload = () => {
+  // [추가] 마지막에 열었던 탭 기억해서 복원
+  const savedTab = localStorage.getItem("currentTab") || "news-section";
+  const savedButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
+  if (savedButton) {
+    switchTab(savedTab, savedButton);
+  }
+
+  const keywords = getSortedTopKeywords();
+  keywords.forEach(k => {
+    searchNews(k, false);
+    renderTrendChart(k);
+  });
+  renderTabs();
+};
+
+setInterval(() => {
+  const keywords = getSortedTopKeywords();
+  keywords.forEach(k => refreshNews(k));
+}, 10 * 60 * 1000);
+
+function switchTab(id, button) {
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  button.classList.add('active');
+
+  // [추가] 현재 선택한 탭 id를 저장
+  localStorage.setItem("currentTab", id);
+}
+  
+function formatNumber(num) {
+  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+  
+function searchNews(keyword = "", save = true) {
+  if (!keyword) keyword = document.getElementById("keyword").value.trim();
+  if (!keyword) return alert("키워드를 입력해주세요.");
+  if (tableCount >= maxTables) return alert("최대 15개의 검색 결과만 표시됩니다.");
+
+  fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+    .then(res => res.ok ? res.json() : Promise.reject(res))
+    .then(data => {
+      if (!data.length) return alert("뉴스 결과가 없습니다.");
+      const hash = data.map(d => d.link).join(",");
+      const prevLinks = lastLinks[keyword] || [];
+      const newLinks = data.map(d => d.link);
+      const isNew = hash !== lastHashes[keyword];
+      if (isNew && document.getElementById('news-section').classList.contains('active')) {
+          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+          }
+      lastHashes[keyword] = hash;
+      lastLinks[keyword] = newLinks;
+
+      const old = document.getElementById("table-" + keyword);
+      if (old) old.remove();
+
+      tableCount++;
+      const div = document.createElement("div");
+      div.className = "news-table";
+      div.id = "table-" + keyword;
+
+      let html = `
+        <h3>
+          ${keyword} 관련 뉴스
+          <button class="remove-btn" onclick="removeTableOnly('${div.id}')">삭제</button>
+        </h3>
+        <table>
+          <thead><tr><th>제목</th><th>출처</th><th>날짜</th><th>감성</th></tr></thead>
+          <tbody>`;
+
+      data.forEach(item => {
+        const raw = item.description || item.title || "";
+        const clean = raw.replace(/<[^>]+>/g, "");
+        const sentiment = analyzeSentiment(item.title + " " + clean);
+        const sentimentIcon = sentiment === "pos" ? "▲" : sentiment === "neg" ? "▼" : "●";
+        const sentimentColor = sentiment === "pos" ? "green" : sentiment === "neg" ? "red" : "gray";
+        const highlightClass = !prevLinks.includes(item.link) ? "highlight" : "";
+
+        html += `
+          <tr class="${highlightClass}">
+            <td><a href="${item.link}" target="_blank">${item.title}</a></td>
+            <td>${item.source}</td>
+            <td>${item.date}</td>
+            <td style="color:${sentimentColor}; font-weight:bold;">${sentimentIcon} ${sentimentLabel(sentiment)}</td>
+          </tr>`;
+      });
+
+      html += "</tbody></table>";
+      div.innerHTML = html;
+      document.getElementById("news-container").prepend(div);
+
+      if (save) {
+        const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+        const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+        freqs[keyword] = (freqs[keyword] || 0) + 1;
+        localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
+        if (!keywords.includes(keyword)) {
+          keywords.push(keyword);
+          localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+        }
+        renderTabs();
+        renderTrendChart(keyword);
+      }
+    })
+    .catch(err => {
+      if (err.status === 403 || err.status === 429) alert("검색량 제한에 도달했습니다.");
+      else alert("뉴스 검색에 실패했습니다.");
+    });
+}
+
+function refreshNews(keyword) {
+  fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+    .then(res => res.json())
+    .then(data => {
+      if (!data.length) return;
+      const hash = data.map(d => d.link).join(",");
+      const prevLinks = lastLinks[keyword] || [];
+      const newLinks = data.map(d => d.link);
+      const isNew = hash !== lastHashes[keyword];
+      if (isNew && document.getElementById('news-section').classList.contains('active')) {
+          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+          }
+      lastHashes[keyword] = hash;
+      lastLinks[keyword] = newLinks;
+      const div = document.getElementById("table-" + keyword);
+      if (div) div.remove();
+      tableCount--;
+      searchNews(keyword, false);
+    });
+}
+
+function removeTableOnly(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.remove();
+    tableCount--;
+  }
+}
+
+function removeKeywordCompletely(keyword) {
+  removeTableOnly("table-" + keyword);
+  document.getElementById("trend-" + keyword)?.remove();
+  const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
+  localStorage.setItem(savedKeywordsKey, JSON.stringify(keywords));
+  const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+  delete freqs[keyword];
+  localStorage.setItem(keywordFreqKey, JSON.stringify(freqs));
+  renderTabs();
+}
+
+function renderTabs() {
+  const keywords = getSortedTopKeywords();
+  const container = document.getElementById("favorite-tabs");
+  container.innerHTML = "";
+  keywords.forEach(k => {
+    const tab = document.createElement("div");
+    tab.className = "tab";
+    const span = document.createElement("span");
+    span.innerText = k;
+    span.onclick = () => {
+      searchNews(k, false);
+      renderTrendChart(k);
+    };
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "close";
+    closeBtn.innerText = "x";
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      removeKeywordCompletely(k);
+    };
+    tab.appendChild(span);
+    tab.appendChild(closeBtn);
+    container.appendChild(tab);
+  });
+}
+
+function getSortedTopKeywords() {
+  const keywords = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]");
+  const freqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
+  return keywords.sort((a, b) => (freqs[b] || 0) - (freqs[a] || 0)).slice(0, 5);
+}
+
+function renderTrendChart(keyword, period = "30d") {
+  fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
+    .then(res => res.json())
+    .then(data => {
+      let maxY = Math.max(...data.map(d => d.ratio), 100);
+      let container = document.getElementById("trend-" + keyword);
+      let canvas;
+
+      if (container) {
+        container.querySelector("h4").innerText = `${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})`;
+        canvas = container.querySelector("canvas");
+        const newCanvas = canvas.cloneNode(true);
+        canvas.parentNode.replaceChild(newCanvas, canvas);
+        canvas = newCanvas;
+      } else {
+        container = document.createElement("div");
+        container.className = "trend-container";
+        container.id = "trend-" + keyword;
+
+        const header = document.createElement("div");
+        header.className = "trend-header";
+        header.innerHTML = `<h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
+          <div>
+            <button onclick="renderTrendChart('${keyword}', '30d')">30일</button>
+            <button onclick="renderTrendChart('${keyword}', '1y')">1년</button>
+          </div>`;
+
+        canvas = document.createElement("canvas");
+        canvas.id = "chart-" + keyword;
+
+        container.appendChild(header);
+        container.appendChild(canvas);
+        document.getElementById("trend-charts").appendChild(container);
+      }
+
+      const ctx = canvas.getContext("2d");
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: data.map(d => d.date),
+          datasets: [{
+            label: keyword + " 검색 비율",
+            data: data.map(d => d.ratio),
+            borderColor: "rgba(75, 192, 192, 1)",
+            backgroundColor: "rgba(75, 192, 192, 0.1)",
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          scales: {
+            x: { ticks: { maxTicksLimit: 6 } },
+            y: { beginAtZero: true, suggestedMax: maxY }
+          },
+          plugins: {
+            legend: { display: false }
+        },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        responsive: true,
+        maintainAspectRatio: false
+      }
+      });
+    });
+}
+
+// Mock 데이터 생성
+function generateMockCompanies(keyword) {
+  const suffixes = ["전자", "테크", "시스템", "솔루션", "네트웍스", "디지털", "아이티", "모터스", "바이오", "건설"];
+  const selected = suffixes.sort(() => 0.5 - Math.random()).slice(0, 5); // 랜덤 5개 선택
+
+  return selected.map(suffix => ({
+    사업자명: `${keyword}${suffix}`,
+    임직원수: Math.floor(Math.random() * 10000) + 100,
+    매출: Math.floor(Math.random() * 10000) + 100,
+    사업장주소: `서울특별시 ${["강남구", "서초구", "마포구", "송파구"][Math.floor(Math.random() * 4)]}`
+  }));
+}
+
+// 검색한 기업 리스트 저장
+let companies = [];
+
+function searchCompany() {
+  const keyword = document.getElementById("companyKeyword").value.trim();
+  if (!keyword) return alert('기업명을 입력해주세요.');
+
+  const newCompanies = generateMockCompanies(keyword);
+
+  newCompanies.forEach(c => {
+    if (!companies.some(existing => existing.사업자명 === c.사업자명)) {
+      companies.push(c);
     }
+  });
 
-    function searchNews() {
-      const keyword = document.getElementById("newsKeyword").value.trim();
-      if (!keyword) return;
+  renderCompanyTable(keyword);
+}
 
-      fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
-        .then(res => res.json())
-        .then(data => {
-          const ul = document.getElementById("newsResults");
-          ul.innerHTML = "";
-          data.forEach(item => {
-            const li = document.createElement("li");
-            li.innerHTML = `<a href="${item.link}" target="_blank">${item.title}</a> (${item.date})`;
-            ul.appendChild(li);
-          });
-        });
-    }
+// 기업 테이블 렌더링
+function renderCompanyTable(highlight = "") {
+  const tbody = document.getElementById("companyResults");
+  tbody.innerHTML = "";
 
-    function searchTrend() {
-      const keyword = document.getElementById("trendKeyword").value.trim();
-      const period = document.getElementById("trendPeriod").value;
-      if (!keyword) return;
+  if (!companies.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.classList.add("empty-text-row");
+    emptyRow.innerHTML = `<td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
+    tbody.appendChild(emptyRow);
+    return;
+  }
 
-      fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
-        .then(res => res.json())
-        .then(data => {
-          const tbody = document.querySelector("#trendResults tbody");
-          tbody.innerHTML = "";
-          data.forEach(item => {
-            const row = document.createElement("tr");
-            row.innerHTML = `<td>${item.date}</td><td>${item.ratio}</td>`;
-            tbody.appendChild(row);
-          });
-        });
-    }
+  // 임직원수 기준 내림차순 정렬
+  companies.sort((a, b) => b.임직원수 - a.임직원수);
 
-    function searchCompany() {
-      const keyword = document.getElementById("companyKeyword").value.trim();
-      if (!keyword) return;
+  companies.forEach((c, idx) => {
+    const row = document.createElement("tr");
+    const highlightName = highlight && c.사업자명.includes(highlight) ?
+      c.사업자명.replaceAll(highlight, `<mark>${highlight}</mark>`) : c.사업자명;
+    
+    row.innerHTML = `
+      <td>${highlightName}</td>
+      <td>${formatNumber(c.임직원수)}</td>
+      <td>${formatNumber(c.매출)}</td>
+      <td>${c.사업장주소}</td>
+      <td><button class="delete-btn" onclick="removeCompany(${idx})">삭제</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
 
-      fetch(`/api/nps?keyword=${encodeURIComponent(keyword)}`)
-        .then(res => res.json())
-        .then(data => {
-          const tbody = document.querySelector("#companyResults tbody");
-          data.forEach(item => {
-            const row = document.createElement("tr");
-            row.innerHTML = `
-              <td>${item["사업장명"]}</td>
-              <td>${item["업종코드명"]}</td>
-              <td>${item["등록일"]}</td>
-              <td>${item["가입자수"]}</td>
-              <td>${item["도로명주소"]}</td>
-              <td><button onclick="this.closest('tr').remove()">삭제</button></td>
-            `;
-            tbody.appendChild(row);
-          });
-        })
-        .catch(err => {
-          console.error("기업 정보 검색 오류:", err);
-          alert("검색에 실패했습니다.");
-        });
-    }
-  </script>
+// 삭제 기능
+function removeCompany(index) {
+  companies.splice(index, 1);
+  renderCompanyTable();
+}
+
+// 테이블 다운로드 기능
+function downloadCompanyTable() {
+  if (!companies.length) {
+    alert("다운로드할 데이터가 없습니다.");
+    return;
+  }
+
+  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
+  companies.forEach(item => {
+    csv += `"${item["사업자명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
+  });
+
+  const BOM = "\uFEFF"; // [추가] UTF-8 BOM
+  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" }); // [수정] BOM 추가
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", "기업정보.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+</script>
+
 </body>
 </html>
