@@ -6,13 +6,18 @@ import urllib.parse
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 from flask_cors import CORS
+from urllib.parse import unquote
 
 app = Flask(__name__)
 CORS(app)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NTS_API_KEY = os.environ.get("NTS_API_KEY")
+# 🔑 환경변수에서 인코딩된 API 키 불러오기 & 디코딩
+ENCODED_KEY = os.getenv("NTS_API_KEY")
+if not ENCODED_KEY:
+    raise ValueError("NTS_API_KEY 환경변수가 설정되지 않았습니다.")
+DECODED_KEY = unquote(ENCODED_KEY)
 
 @app.route("/")
 def home():
@@ -98,76 +103,70 @@ def get_trend():
         print("네이버 데이터랩 트렌드 API 오류:", e)
         return jsonify({"error": "Failed to fetch trend"}), 500
 
-@app.route('/api/nts', methods=['POST'])
+@app.route("/api/nts", methods=["POST"])
 def search_nts_status():
-    if 'file' not in request.files:
-        return jsonify({"error": "엑셀 파일을 업로드해주세요."}), 400
-
-    file = request.files['file']
-
     try:
+        # 🔍 파일 읽기
+        file = request.files.get("file")
+        if not file:
+            return jsonify({"error": "파일이 업로드되지 않았습니다."}), 400
+
         df = pd.read_excel(file)
-        print("📄 업로드된 컬럼명:", df.columns.tolist())
+        if "사업자등록번호" not in df.columns:
+            return jsonify({"error": "'사업자등록번호' 컬럼이 필요합니다."}), 400
 
-        if '사업자등록번호' not in df.columns:
-            return jsonify({"error": "'사업자등록번호' 컬럼이 없습니다."}), 400
+        results = []
 
-        # 사업자번호 정제
-        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").str.strip()
-        bno_list = [bno for bno in bno_list if bno.isdigit() and len(bno) == 10]
+        for idx, row in df.iterrows():
+            biz_num = str(row["사업자등록번호"]).replace("-", "").strip()
+            if len(biz_num) != 10 or not biz_num.isdigit():
+                results.append({
+                    "사업자등록번호": row["사업자등록번호"],
+                    "상태": "형식 오류",
+                    "과세유형": "-",
+                    "폐업일자": "-"
+                })
+                continue
 
-        print("📌 정제된 사업자등록번호:", bno_list[:5], "... 총", len(bno_list), "건")
-
-        if not bno_list:
-            return jsonify({"error": "유효한 10자리 사업자등록번호가 없습니다."}), 400
-
-        # ✅ API URL & 키 점검
-        print("🔐 NTS_API_KEY 길이:", len(NTS_API_KEY), "내용 일부:", NTS_API_KEY[:10] if NTS_API_KEY else "없음")
-
-        chunk_size = 100
-        result_data = []
-        headers = {"Content-Type": "application/json"}
-        url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
-
-        for i in range(0, len(bno_list), chunk_size):
-            chunk = bno_list[i:i + chunk_size]
-            payload = {"b_no": chunk}
-
-            print(f"🔗 요청 URL: {url}")
-            print(f"📦 요청 Payload: {payload}")
-
+            # 📨 API 요청
             try:
-                res = requests.post(url, headers=headers, json=payload)
-            except Exception as e:
-                print("🚨 API 호출 실패:", e)
-                return jsonify({"error": "API 요청 중 오류 발생", "detail": str(e)}), 500
+                url = (
+                    f"https://api.odcloud.kr/api/nts-businessman/v1/status"
+                    f"?serviceKey={DECODED_KEY}"
+                )
+                payload = {"b_no": [biz_num]}
+                headers = {"Content-Type": "application/json"}
+                response = requests.post(url, headers=headers, json=payload)
+                data = response.json()
 
-            print("📥 응답 상태:", res.status_code)
-            print("📥 응답 내용 (일부):", res.text[:300])
+                if "data" in data and len(data["data"]) > 0:
+                    item = data["data"][0]
+                    results.append({
+                        "사업자등록번호": biz_num,
+                        "상태": item.get("b_stt", "N/A"),
+                        "과세유형": item.get("tax_type", "N/A"),
+                        "폐업일자": item.get("end_dt", None)
+                    })
+                else:
+                    results.append({
+                        "사업자등록번호": biz_num,
+                        "상태": "조회 실패",
+                        "과세유형": "-",
+                        "폐업일자": "-"
+                    })
 
-            if res.status_code != 200:
-                return jsonify({"error": f"API 오류: {res.status_code}", "detail": res.text}), 500
-
-            try:
-                items = res.json().get("data", [])
-            except Exception as e:
-                print("❌ JSON 파싱 실패:", e)
-                print("❌ 응답 원문:", res.text)
-                return jsonify({"error": "API 응답이 올바르지 않습니다.", "detail": str(e)}), 500
-
-            for item in items:
-                result_data.append({
-                    "사업자등록번호": item.get("b_no"),
-                    "상태": item.get("b_stt"),
-                    "과세유형": item.get("tax_type"),
-                    "폐업일자": item.get("end_dt", "")
+            except Exception as api_err:
+                results.append({
+                    "사업자등록번호": biz_num,
+                    "상태": "API 호출 실패",
+                    "과세유형": "-",
+                    "폐업일자": "-"
                 })
 
-        return jsonify(result_data)
+        return jsonify(results)
 
     except Exception as e:
-        print("❌ 전체 예외 발생:", str(e))
-        return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생", "detail": str(e)}), 500
+        return jsonify({"error": f"파일 처리 또는 API 호출 중 오류 발생: {str(e)}"}), 500
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
