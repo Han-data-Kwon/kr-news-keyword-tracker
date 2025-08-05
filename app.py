@@ -101,6 +101,10 @@ def get_trend():
         print("네이버 데이터랩 트렌드 API 오류:", e)
         return jsonify({"error": "Failed to fetch trend"}), 500
 
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 @app.route("/api/nts", methods=["POST"])
 def search_nts_status():
     try:
@@ -114,8 +118,8 @@ def search_nts_status():
 
         results = []
         for idx, row in df.iterrows():
-            biz_no = str(row["사업자등록번호"]).strip().replace("-", "")
-            if not biz_no.isdigit() or len(biz_no) != 10:
+            b_no = str(row["사업자등록번호"]).strip().replace("-", "")
+            if not b_no.isdigit() or len(b_no) != 10:
                 results.append({
                     "사업자등록번호": row["사업자등록번호"],
                     "상태": "형식 오류",
@@ -124,9 +128,8 @@ def search_nts_status():
                 })
                 continue
 
-            # ✅ 국세청 API 호출 샘플 스타일
             url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
-            payload = { "b_no": [biz_no] }
+            payload = { "b_no": [b_no] }
             headers = {
                 "Content-Type": "application/json",
                 "Accept": "application/json"
@@ -140,14 +143,15 @@ def search_nts_status():
                 if "data" in json_data and json_data["data"]:
                     item = json_data["data"][0]
                     results.append({
-                        "사업자등록번호": biz_no,
+                        "사업자등록번호": b_no,
                         "상태": item.get("b_stt", "N/A"),
                         "과세유형": item.get("tax_type", "N/A"),
                         "폐업일자": item.get("end_dt", "-") or "-"
                     })
                 else:
+                    print(f"[API 응답 이상] {response.text}")
                     results.append({
-                        "사업자등록번호": biz_no,
+                        "사업자등록번호": b_no,
                         "상태": "조회 실패",
                         "과세유형": "-",
                         "폐업일자": "-"
@@ -155,8 +159,9 @@ def search_nts_status():
 
             except Exception as api_err:
                 print(f"[ERROR] API 요청 실패: {api_err}")
+                print(f"[응답 내용] {response.text}")
                 results.append({
-                    "사업자등록번호": biz_no,
+                    "사업자등록번호": b_no,
                     "상태": "API 호출 실패",
                     "과세유형": "-",
                     "폐업일자": "-"
