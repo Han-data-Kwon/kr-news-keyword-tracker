@@ -73,27 +73,34 @@
   <div id="trend-charts"></div>
 </div>
 
-<!-- 기업 정보 검색 탭 -->
-<div id="company-section" class="section">
-  <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
-  <button onclick="searchCompany()">검색</button>
-  <button onclick="downloadCompanyTable()">테이블 다운로드</button>
-  <table style="margin-top: 20px;">
-    <thead>
-      <tr>
-        <th>사업자명</th>
-        <th>임직원수</th>
-        <th>매출(억원)</th>
-        <th>사업장주소</th>
-        <th>삭제</th>
-      </tr>
-    </thead>
-    <tbody id="companyResults">
-      <tr class="empty-text-row">
-        <td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
-      </tr>
-    </tbody>
-  </table>
+<!-- 사업자등록 상태조회 탭 -->
+<div class="tab-pane fade" id="company-section" role="tabpanel" aria-labelledby="company-tab">
+    <div class="section">
+        <h5>📁 사업자등록번호 엑셀 업로드</h5>
+        <form id="ntsForm" enctype="multipart/form-data">
+            <div class="input-group mb-3">
+                <input type="file" name="file" accept=".xlsx" class="form-control" required>
+                <button type="submit" class="btn btn-primary">조회</button>
+            </div>
+            <div class="form-text">※ 엑셀에 <strong>'사업자등록번호'</strong> 컬럼이 포함되어 있어야 합니다.</div>
+        </form>
+    </div>
+
+    <div id="ntsResult" class="table-responsive d-none">
+        <h6 class="mt-4">✅ 조회 결과</h6>
+        <table class="table table-bordered table-striped text-center align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th>사업자등록번호</th>
+                    <th>상태</th>
+                    <th>과세유형</th>
+                    <th>폐업일자</th>
+                </tr>
+            </thead>
+            <tbody id="ntsTableBody"></tbody>
+        </table>
+    </div>
 </div>
 
 <script>
@@ -125,7 +132,7 @@ const lastLinks = {};
 window.onload = () => {
   // [추가] 마지막에 열었던 탭 기억해서 복원
   const savedTab = localStorage.getItem("currentTab") || "news-section";
-  const savedButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
+  const savedButton = document.querySelector(.tab-button[onclick*="${savedTab}"]);
   if (savedButton) {
     switchTab(savedTab, savedButton);
   }
@@ -162,7 +169,7 @@ function searchNews(keyword = "", save = true) {
   if (!keyword) return alert("키워드를 입력해주세요.");
   if (tableCount >= maxTables) return alert("최대 15개의 검색 결과만 표시됩니다.");
 
-  fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+  fetch(/api/search_news?q=${encodeURIComponent(keyword)})
     .then(res => res.ok ? res.json() : Promise.reject(res))
     .then(data => {
       if (!data.length) return alert("뉴스 결과가 없습니다.");
@@ -171,7 +178,7 @@ function searchNews(keyword = "", save = true) {
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
       if (isNew && document.getElementById('news-section').classList.contains('active')) {
-          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+          alert("${keyword}"의 새 뉴스가 업데이트되었습니다.);
           }
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
@@ -184,14 +191,14 @@ function searchNews(keyword = "", save = true) {
       div.className = "news-table";
       div.id = "table-" + keyword;
 
-      let html = `
+      let html = 
         <h3>
           ${keyword} 관련 뉴스
           <button class="remove-btn" onclick="removeTableOnly('${div.id}')">삭제</button>
         </h3>
         <table>
           <thead><tr><th>제목</th><th>출처</th><th>날짜</th><th>감성</th></tr></thead>
-          <tbody>`;
+          <tbody>;
 
       data.forEach(item => {
         const raw = item.description || item.title || "";
@@ -201,13 +208,13 @@ function searchNews(keyword = "", save = true) {
         const sentimentColor = sentiment === "pos" ? "green" : sentiment === "neg" ? "red" : "gray";
         const highlightClass = !prevLinks.includes(item.link) ? "highlight" : "";
 
-        html += `
+        html += 
           <tr class="${highlightClass}">
             <td><a href="${item.link}" target="_blank">${item.title}</a></td>
             <td>${item.source}</td>
             <td>${item.date}</td>
             <td style="color:${sentimentColor}; font-weight:bold;">${sentimentIcon} ${sentimentLabel(sentiment)}</td>
-          </tr>`;
+          </tr>;
       });
 
       html += "</tbody></table>";
@@ -234,7 +241,7 @@ function searchNews(keyword = "", save = true) {
 }
 
 function refreshNews(keyword) {
-  fetch(`/api/search_news?q=${encodeURIComponent(keyword)}`)
+  fetch(/api/search_news?q=${encodeURIComponent(keyword)})
     .then(res => res.json())
     .then(data => {
       if (!data.length) return;
@@ -243,7 +250,7 @@ function refreshNews(keyword) {
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
       if (isNew && document.getElementById('news-section').classList.contains('active')) {
-          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+          alert("${keyword}"의 새 뉴스가 감지되었습니다.);
           }
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
@@ -306,7 +313,7 @@ function getSortedTopKeywords() {
 }
 
 function renderTrendChart(keyword, period = "30d") {
-  fetch(`/api/trend?q=${encodeURIComponent(keyword)}&period=${period}`)
+  fetch(/api/trend?q=${encodeURIComponent(keyword)}&period=${period})
     .then(res => res.json())
     .then(data => {
       let maxY = Math.max(...data.map(d => d.ratio), 100);
@@ -314,7 +321,7 @@ function renderTrendChart(keyword, period = "30d") {
       let canvas;
 
       if (container) {
-        container.querySelector("h4").innerText = `${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})`;
+        container.querySelector("h4").innerText = ${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"});
         canvas = container.querySelector("canvas");
         const newCanvas = canvas.cloneNode(true);
         canvas.parentNode.replaceChild(newCanvas, canvas);
@@ -326,11 +333,11 @@ function renderTrendChart(keyword, period = "30d") {
 
         const header = document.createElement("div");
         header.className = "trend-header";
-        header.innerHTML = `<h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
+        header.innerHTML = <h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
           <div>
             <button onclick="renderTrendChart('${keyword}', '30d')">30일</button>
             <button onclick="renderTrendChart('${keyword}', '1y')">1년</button>
-          </div>`;
+          </div>;
 
         canvas = document.createElement("canvas");
         canvas.id = "chart-" + keyword;
@@ -373,98 +380,46 @@ function renderTrendChart(keyword, period = "30d") {
     });
 }
 
-// Mock 데이터 생성
-function generateMockCompanies(keyword) {
-  const suffixes = ["전자", "테크", "시스템", "솔루션", "네트웍스", "디지털", "아이티", "모터스", "바이오", "건설"];
-  const selected = suffixes.sort(() => 0.5 - Math.random()).slice(0, 5); // 랜덤 5개 선택
+document.getElementById("ntsForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
 
-  return selected.map(suffix => ({
-    사업자명: `${keyword}${suffix}`,
-    임직원수: Math.floor(Math.random() * 10000) + 100,
-    매출: Math.floor(Math.random() * 10000) + 100,
-    사업장주소: `서울특별시 ${["강남구", "서초구", "마포구", "송파구"][Math.floor(Math.random() * 4)]}`
-  }));
-}
+    fetch("/api/nts", {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        const resultBox = document.getElementById("ntsResult");
+        const tableBody = document.getElementById("ntsTableBody");
+        tableBody.innerHTML = "";
 
-// 검색한 기업 리스트 저장
-let companies = [];
+        if (data.error) {
+            alert(data.error);
+            resultBox.classList.add("d-none");
+            return;
+        }
 
-function searchCompany() {
-  const keyword = document.getElementById("companyKeyword").value.trim();
-  if (!keyword) return alert('기업명을 입력해주세요.');
+        data.forEach((item, index) => {
+            const row = <tr>
+                <td>${index + 1}</td>
+                <td>${item["사업자등록번호"]}</td>
+                <td>${item["상태"]}</td>
+                <td>${item["과세유형"]}</td>
+                <td>${item["폐업일자"] || "-"}</td>
+            </tr>;
+            tableBody.insertAdjacentHTML("beforeend", row);
+        });
 
-  const newCompanies = generateMockCompanies(keyword);
-
-  newCompanies.forEach(c => {
-    if (!companies.some(existing => existing.사업자명 === c.사업자명)) {
-      companies.push(c);
-    }
-  });
-
-  renderCompanyTable(keyword);
-}
-
-// 기업 테이블 렌더링
-function renderCompanyTable(highlight = "") {
-  const tbody = document.getElementById("companyResults");
-  tbody.innerHTML = "";
-
-  if (!companies.length) {
-    const emptyRow = document.createElement("tr");
-    emptyRow.classList.add("empty-text-row");
-    emptyRow.innerHTML = `<td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
-    tbody.appendChild(emptyRow);
-    return;
-  }
-
-  // 임직원수 기준 내림차순 정렬
-  companies.sort((a, b) => b.임직원수 - a.임직원수);
-
-  companies.forEach((c, idx) => {
-    const row = document.createElement("tr");
-    const highlightName = highlight && c.사업자명.includes(highlight) ?
-      c.사업자명.replaceAll(highlight, `<mark>${highlight}</mark>`) : c.사업자명;
-    
-    row.innerHTML = `
-      <td>${highlightName}</td>
-      <td>${formatNumber(c.임직원수)}</td>
-      <td>${formatNumber(c.매출)}</td>
-      <td>${c.사업장주소}</td>
-      <td><button class="delete-btn" onclick="removeCompany(${idx})">삭제</button></td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// 삭제 기능
-function removeCompany(index) {
-  companies.splice(index, 1);
-  renderCompanyTable();
-}
-
-// 테이블 다운로드 기능
-function downloadCompanyTable() {
-  if (!companies.length) {
-    alert("다운로드할 데이터가 없습니다.");
-    return;
-  }
-
-  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
-  companies.forEach(item => {
-    csv += `"${item["사업자명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
-  });
-
-  const BOM = "\uFEFF"; // [추가] UTF-8 BOM
-  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" }); // [수정] BOM 추가
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", "기업정보.csv");
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
+        resultBox.classList.remove("d-none");
+    })
+    .catch(err => {
+        console.error("조회 오류:", err);
+        alert("조회 중 오류가 발생했습니다.");
+    });
+});
+  
 </script>
 
 </body>
