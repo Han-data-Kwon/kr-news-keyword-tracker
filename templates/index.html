@@ -8,27 +8,47 @@
   <style>
     body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
     input, button { padding: 8px; font-size: 14px; }
-    canvas { width: 100% !important; height: 200px !important; max-height: 220px; }
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    input, button { padding: 8px; font-size: 14px; }
+    /* [추가] 트렌드 차트 캔버스 높이 고정 */
+    canvas {
+      width: 100% !important;
+      height: 200px !important;
+      max-height: 220px;
+    }
     .tabs { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; }
-    .tab-button { padding: 8px 16px; background: #ddd; border: none; border-radius: 20px; cursor: pointer; font-weight: bold; }
+    .tab-button {
+      padding: 8px 16px;
+      background: #ddd;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+      font-weight: bold;
+    }
     .tab-button.active { background: #4285f4; color: white; }
+
     .section { display: none; }
     .section.active { display: block; }
+
     .tab-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
     .tab { padding: 6px 12px; background: #e0e0e0; border-radius: 20px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
     .tab span { font-weight: bold; }
     .tab .close { background: transparent; border: none; color: red; font-weight: bold; cursor: pointer; }
     .tab:hover { background: #d4d4d4; }
+
     .news-table { margin-top: 20px; border: 1px solid #ccc; padding: 10px; border-radius: 6px; background: #fff; }
     .trend-container { margin-top: 10px; background: #fff; padding: 15px; border-radius: 6px; }
     .trend-header { display: flex; justify-content: space-between; align-items: center; }
+
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; font-size: 13px; text-align: left; }
     tr.highlight { background-color: #fff7cc; }
+
     button.remove-btn, .delete-btn {
       background: red; color: white; border: none;
       padding: 4px 8px; cursor: pointer; border-radius: 4px;
     }
+
     @media (max-width: 768px) {
       table, thead, tbody, th, td, tr { display: block; }
       td { border: none; padding: 4px 0; }
@@ -53,34 +73,27 @@
   <div id="trend-charts"></div>
 </div>
 
-<!-- 사업자등록 상태조회 탭 -->
+<!-- 기업 정보 검색 탭 -->
 <div id="company-section" class="section">
-  <div class="my-4">
-    <h5>📁 사업자등록번호 엑셀 업로드</h5>
-    <form id="ntsForm" enctype="multipart/form-data">
-      <div class="input-group mb-3">
-        <input type="file" name="file" accept=".xlsx" class="form-control" required>
-        <button type="submit" class="btn btn-primary">조회</button>
-      </div>
-      <div class="form-text">※ 엑셀에 <strong>'사업자등록번호'</strong> 컬럼이 포함되어 있어야 합니다.</div>
-    </form>
-  </div>
-
-  <div id="ntsResult" class="table-responsive d-none">
-    <h6 class="mt-4">✅ 조회 결과</h6>
-    <table class="table table-bordered table-striped text-center align-middle">
-      <thead class="table-dark">
-        <tr>
-          <th>#</th>
-          <th>사업자등록번호</th>
-          <th>상태</th>
-          <th>과세유형</th>
-          <th>폐업일자</th>
-        </tr>
-      </thead>
-      <tbody id="ntsTableBody"></tbody>
-    </table>
-  </div>
+  <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
+  <button onclick="searchCompany()">검색</button>
+  <button onclick="downloadCompanyTable()">테이블 다운로드</button>
+  <table style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>사업자명</th>
+        <th>임직원수</th>
+        <th>매출(억원)</th>
+        <th>사업장주소</th>
+        <th>삭제</th>
+      </tr>
+    </thead>
+    <tbody id="companyResults">
+      <tr class="empty-text-row">
+        <td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
+      </tr>
+    </tbody>
+  </table>
 </div>
 
 <script>
@@ -102,75 +115,6 @@ function sentimentLabel(type) {
   return "중립";
 }
 
-function switchTab(id, button) {
-  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  button.classList.add('active');
-  localStorage.setItem("currentTab", id);
-}
-
-window.addEventListener("DOMContentLoaded", () => {
-  // 탭 복원
-  const savedTab = localStorage.getItem("currentTab") || "news-section";
-  const savedButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
-  if (savedButton) switchTab(savedTab, savedButton);
-
-  // 사업자등록 조회 submit
-  const form = document.getElementById("ntsForm");
-  form.addEventListener("submit", function (e) {
-    e.preventDefault();
-    const formData = new FormData(form);
-
-    fetch("/api/nts", {
-      method: "POST",
-      body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-      const resultBox = document.getElementById("ntsResult");
-      const tableBody = document.getElementById("ntsTableBody");
-      tableBody.innerHTML = "";
-
-      if (data.error) {
-        alert(data.error);
-        resultBox.classList.add("d-none");
-        return;
-      }
-
-      data.forEach((item, index) => {
-        const row = `<tr>
-          <td>${index + 1}</td>
-          <td>${item["사업자등록번호"]}</td>
-          <td>${item["상태"]}</td>
-          <td>${item["과세유형"]}</td>
-          <td>${item["폐업일자"] || "-"}</td>
-        </tr>`;
-        tableBody.insertAdjacentHTML("beforeend", row);
-      });
-
-      resultBox.classList.remove("d-none");
-    })
-    .catch(err => {
-      console.error("조회 오류:", err);
-      alert("조회 중 오류가 발생했습니다.");
-    });
-  });
-
-  // 키워드 자동 복원 및 뉴스 조회
-  const keywords = getSortedTopKeywords();
-  keywords.forEach(k => {
-    searchNews(k, false);
-    renderTrendChart(k);
-  });
-  renderTabs();
-
-  setInterval(() => {
-    const keywords = getSortedTopKeywords();
-    keywords.forEach(k => refreshNews(k));
-  }, 10 * 60 * 1000);
-});
-
 let tableCount = 0;
 const maxTables = 15;
 const savedKeywordsKey = "savedKeywords";
@@ -178,10 +122,41 @@ const keywordFreqKey = "keywordFreq";
 const lastHashes = {};
 const lastLinks = {};
 
+window.onload = () => {
+  // [추가] 마지막에 열었던 탭 기억해서 복원
+  const savedTab = localStorage.getItem("currentTab") || "news-section";
+  const savedButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
+  if (savedButton) {
+    switchTab(savedTab, savedButton);
+  }
+
+  const keywords = getSortedTopKeywords();
+  keywords.forEach(k => {
+    searchNews(k, false);
+    renderTrendChart(k);
+  });
+  renderTabs();
+};
+
+setInterval(() => {
+  const keywords = getSortedTopKeywords();
+  keywords.forEach(k => refreshNews(k));
+}, 10 * 60 * 1000);
+
+function switchTab(id, button) {
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  button.classList.add('active');
+
+  // [추가] 현재 선택한 탭 id를 저장
+  localStorage.setItem("currentTab", id);
+}
+  
 function formatNumber(num) {
   return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
-
+  
 function searchNews(keyword = "", save = true) {
   if (!keyword) keyword = document.getElementById("keyword").value.trim();
   if (!keyword) return alert("키워드를 입력해주세요.");
@@ -196,8 +171,8 @@ function searchNews(keyword = "", save = true) {
       const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
       if (isNew && document.getElementById('news-section').classList.contains('active')) {
-        alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
-      }
+          alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
+          }
       lastHashes[keyword] = hash;
       lastLinks[keyword] = newLinks;
 
@@ -265,12 +240,13 @@ function refreshNews(keyword) {
       if (!data.length) return;
       const hash = data.map(d => d.link).join(",");
       const prevLinks = lastLinks[keyword] || [];
+      const newLinks = data.map(d => d.link);
       const isNew = hash !== lastHashes[keyword];
       if (isNew && document.getElementById('news-section').classList.contains('active')) {
-        alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
-      }
+          alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
+          }
       lastHashes[keyword] = hash;
-      lastLinks[keyword] = data.map(d => d.link);
+      lastLinks[keyword] = newLinks;
       const div = document.getElementById("table-" + keyword);
       if (div) div.remove();
       tableCount--;
@@ -383,15 +359,112 @@ function renderTrendChart(keyword, period = "30d") {
             x: { ticks: { maxTicksLimit: 6 } },
             y: { beginAtZero: true, suggestedMax: maxY }
           },
-          plugins: { legend: { display: false } },
-          interaction: { mode: 'index', intersect: false },
-          responsive: true,
-          maintainAspectRatio: false
-        }
+          plugins: {
+            legend: { display: false }
+        },
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        responsive: true,
+        maintainAspectRatio: false
+      }
       });
     });
 }
 
+// Mock 데이터 생성
+function generateMockCompanies(keyword) {
+  const suffixes = ["전자", "테크", "시스템", "솔루션", "네트웍스", "디지털", "아이티", "모터스", "바이오", "건설"];
+  const selected = suffixes.sort(() => 0.5 - Math.random()).slice(0, 5); // 랜덤 5개 선택
+
+  return selected.map(suffix => ({
+    사업자명: `${keyword}${suffix}`,
+    임직원수: Math.floor(Math.random() * 10000) + 100,
+    매출: Math.floor(Math.random() * 10000) + 100,
+    사업장주소: `서울특별시 ${["강남구", "서초구", "마포구", "송파구"][Math.floor(Math.random() * 4)]}`
+  }));
+}
+
+// 검색한 기업 리스트 저장
+let companies = [];
+
+function searchCompany() {
+  const keyword = document.getElementById("companyKeyword").value.trim();
+  if (!keyword) return alert('기업명을 입력해주세요.');
+
+  const newCompanies = generateMockCompanies(keyword);
+
+  newCompanies.forEach(c => {
+    if (!companies.some(existing => existing.사업자명 === c.사업자명)) {
+      companies.push(c);
+    }
+  });
+
+  renderCompanyTable(keyword);
+}
+
+// 기업 테이블 렌더링
+function renderCompanyTable(highlight = "") {
+  const tbody = document.getElementById("companyResults");
+  tbody.innerHTML = "";
+
+  if (!companies.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.classList.add("empty-text-row");
+    emptyRow.innerHTML = `<td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
+    tbody.appendChild(emptyRow);
+    return;
+  }
+
+  // 임직원수 기준 내림차순 정렬
+  companies.sort((a, b) => b.임직원수 - a.임직원수);
+
+  companies.forEach((c, idx) => {
+    const row = document.createElement("tr");
+    const highlightName = highlight && c.사업자명.includes(highlight) ?
+      c.사업자명.replaceAll(highlight, `<mark>${highlight}</mark>`) : c.사업자명;
+    
+    row.innerHTML = `
+      <td>${highlightName}</td>
+      <td>${formatNumber(c.임직원수)}</td>
+      <td>${formatNumber(c.매출)}</td>
+      <td>${c.사업장주소}</td>
+      <td><button class="delete-btn" onclick="removeCompany(${idx})">삭제</button></td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+// 삭제 기능
+function removeCompany(index) {
+  companies.splice(index, 1);
+  renderCompanyTable();
+}
+
+// 테이블 다운로드 기능
+function downloadCompanyTable() {
+  if (!companies.length) {
+    alert("다운로드할 데이터가 없습니다.");
+    return;
+  }
+
+  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
+  companies.forEach(item => {
+    csv += `"${item["사업자명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
+  });
+
+  const BOM = "\uFEFF"; // [추가] UTF-8 BOM
+  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" }); // [수정] BOM 추가
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", "기업정보.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 </script>
 
 </body>
