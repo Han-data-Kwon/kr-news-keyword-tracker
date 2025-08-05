@@ -116,8 +116,10 @@ def search_nts_status():
         results = []
 
         for idx, row in df.iterrows():
-            biz_num = str(row["사업자등록번호"]).replace("-", "").strip()
-            if len(biz_num) != 10 or not biz_num.isdigit():
+            try:
+                # ✅ 사업자번호 10자리로 안전하게 변환
+                biz_num = str(int(str(row["사업자등록번호"]).replace("-", "").strip())).zfill(10)
+            except:
                 results.append({
                     "사업자등록번호": row["사업자등록번호"],
                     "상태": "형식 오류",
@@ -128,14 +130,13 @@ def search_nts_status():
 
             # 📨 API 요청
             try:
-                url = (f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
-                )
+                url = (f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}")
                 payload = {"b_no": [biz_num]}
                 headers = {"Content-Type": "application/json"}
                 response = requests.post(url, headers=headers, json=payload)
                 data = response.json()
 
-                if "data" in data and len(data["data"]) > 0:
+                if "data" in data and len(data["data"]) > 0 and data["data"][0].get("b_stt"):
                     item = data["data"][0]
                     results.append({
                         "사업자등록번호": biz_num,
