@@ -120,35 +120,31 @@ def search_nts_status():
         result_data = []
 
         for i in range(0, len(bno_list), chunk_size):
-            chunk = bno_list[i:i+chunk_size]
-            payload = {"b_no": chunk}
-            headers = {"Content-Type": "application/json"}
-            url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
+    chunk = bno_list[i:i+chunk_size]
+    if not chunk:
+        continue  # 빈 리스트는 스킵
 
-            print("요청 URL:", url)  # 디버깅용
-            print("요청 Payload:", payload)  # 디버깅용
+    payload = {"b_no": chunk}
+    headers = {"Content-Type": "application/json"}
+    url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
 
-            res = requests.post(url, headers=headers, json=payload)
-            print("응답 상태:", res.status_code)
-            print("응답 내용:", res.text)
+    print("요청 URL:", url)
+    print("요청 Payload:", payload)
 
-            if res.status_code != 200:
-                return jsonify({"error": f"API 오류: {res.status_code}"}), 500
+    res = requests.post(url, headers=headers, json=payload)
+    print("응답 상태:", res.status_code)
+    print("응답 본문:", res.text)
 
-            items = res.json().get("data", [])
-            for item in items:
-                result_data.append({
-                    "사업자등록번호": item.get("b_no"),
-                    "상태": item.get("b_stt"),
-                    "과세유형": item.get("tax_type"),
-                    "폐업일자": item.get("end_dt", ""),
-                })
+    if res.status_code != 200:
+        return jsonify({"error": f"API 오류: {res.status_code}"}), 500
 
-        return jsonify(result_data)
-
+    try:
+        items = res.json().get("data", [])
     except Exception as e:
-        print("국세청 API 오류:", e)
-        return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생"}), 500
+        print("JSON 디코딩 실패:", e)
+        print("응답 원문:", res.text)
+        return jsonify({"error": "API 응답이 올바르지 않습니다."}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Render에서는 PORT 환경변수를 사용함
