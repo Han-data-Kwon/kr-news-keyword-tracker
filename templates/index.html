@@ -379,48 +379,54 @@ function renderTrendChart(keyword, period = "30d") {
       });
     });
 }
-
-<script>
-document.getElementById("ntsForm").addEventListener("submit", function (e) {
+// 사업자등록 상태조회 기능 스크립트
+window.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("ntsForm");
+  form.addEventListener("submit", function (e) {
     e.preventDefault();
-    const form = e.target;
     const formData = new FormData(form);
-
     fetch("/api/nts", {
-        method: "POST",
-        body: formData
+      method: "POST",
+      body: formData
     })
     .then(res => res.json())
     .then(data => {
-        const resultBox = document.getElementById("ntsResult");
-        const tableBody = document.getElementById("ntsTableBody");
-        tableBody.innerHTML = "";
+      const resultBox = document.getElementById("ntsResult");
+      const tableBody = document.getElementById("ntsTableBody");
+      tableBody.innerHTML = "";
 
-        if (data.error) {
-            alert(data.error);
-            resultBox.classList.add("d-none");
-            return;
-        }
+      if (data.error) {
+        alert(data.error);
+        resultBox.classList.add("d-none");
+        return;
+      }
 
-        data.forEach((item, index) => {
-            const row = `<tr>
-                <td>${index + 1}</td>
-                <td>${item["사업자등록번호"]}</td>
-                <td>${item["상태"]}</td>
-                <td>${item["과세유형"]}</td>
-                <td>${item["폐업일자"] || "-"}</td>
-            </tr>`;
-            tableBody.insertAdjacentHTML("beforeend", row);
-        });
-
-        resultBox.classList.remove("d-none");
+      data.forEach((item, index) => {
+        const row = `<tr>
+          <td>${index + 1}</td>
+          <td>${item["사업자등록번호"]}</td>
+          <td>${item["상태"]}</td>
+          <td>${item["과세유형"]}</td>
+          <td>${item["폐업일자"] || "-"}</td>
+        </tr>`;
+        tableBody.insertAdjacentHTML("beforeend", row);
+      });
+      resultBox.classList.remove("d-none");
     })
     .catch(err => {
-        console.error("조회 오류:", err);
-        alert("조회 중 오류가 발생했습니다.");
+      console.error("조회 오류:", err);
+      alert("조회 중 오류가 발생했습니다.");
     });
+  });
 });
-</script>
 
+function switchTab(id, button) {
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  button.classList.add('active');
+  localStorage.setItem("currentTab", id);
+}
+</script>
 </body>
 </html>
