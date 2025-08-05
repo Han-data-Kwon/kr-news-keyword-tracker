@@ -106,34 +106,49 @@
         });
     }
 
-    document.getElementById("ntsForm").addEventListener("submit", function(e) {
-      e.preventDefault();
-      const formData = new FormData(this);
-      fetch("/api/nts", {
-        method: "POST",
-        body: formData
-      })
-      .then(res => res.json())
-      .then(data => {
-        const tbody = document.querySelector("#nts-result-table tbody");
-        tbody.innerHTML = "";
-        if (data.error) {
-          alert(data.error);
-          return;
-        }
-        data.forEach((row, i) => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${i + 1}</td>
-            <td>${row["사업자등록번호"]}</td>
-            <td>${row["상태"]}</td>
-            <td>${row["과세유형"]}</td>
-            <td>${row["폐업일자"] || "-"}</td>
-          `;
-          tbody.appendChild(tr);
-        });
+    
+  // ✅ 수정된 JavaScript 코드 전체
+  document.getElementById("ntsForm").addEventListener("submit", function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+
+    fetch("/api/nts", {
+      method: "POST",
+      body: formData
+    })
+    .then(async (res) => {
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "서버 오류 발생" }));
+        alert("❌ " + (errData.error || "요청 실패"));
+        throw new Error("HTTP error " + res.status);
+      }
+      return res.json();
+    })
+    .then(data => {
+      const tbody = document.querySelector("#nts-result-table tbody");
+      tbody.innerHTML = "";
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      data.forEach((row, i) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td>${row["사업자등록번호"]}</td>
+          <td>${row["상태"]}</td>
+          <td>${row["과세유형"]}</td>
+          <td>${row["폐업일자"] || "-"}</td>
+        `;
+        tbody.appendChild(tr);
       });
+    })
+    .catch(err => {
+      console.error("🚨 요청 실패:", err);
     });
-  </script>
+  });
+</script>
 </body>
 </html>
