@@ -106,15 +106,15 @@ def search_nts_status():
     file = request.files['file']
     try:
         df = pd.read_excel(file)
+        print("업로드된 컬럼명:", df.columns.tolist())
+
         if '사업자등록번호' not in df.columns:
             return jsonify({"error": "'사업자등록번호' 컬럼이 없습니다."}), 400
 
-        # 사업자번호 전처리
-        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "", regex=False).str.strip()
+        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").str.strip()
         bno_list = [bno for bno in bno_list if bno.isdigit() and len(bno) == 10]
 
-        if not bno_list:
-            return jsonify({"error": "유효한 10자리 사업자등록번호가 없습니다."}), 400
+        print("최종 요청 사업자등록번호:", bno_list[:5], "... 총", len(bno_list), "개")
 
         chunk_size = 100
         result_data = []
@@ -125,9 +125,14 @@ def search_nts_status():
             headers = {"Content-Type": "application/json"}
             url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
 
+            print("요청 URL:", url)
+            print("요청 Payload:", payload)
+
             res = requests.post(url, headers=headers, json=payload)
+            print("응답 상태:", res.status_code)
+            print("응답 내용:", res.text)
+
             if res.status_code != 200:
-                print("API 호출 실패 상태코드:", res.status_code)
                 return jsonify({"error": f"API 오류: {res.status_code}"}), 500
 
             items = res.json().get("data", [])
