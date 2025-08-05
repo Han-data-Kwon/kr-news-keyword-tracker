@@ -139,3 +139,7 @@ def search_nts_status():
     except Exception as e:
         print("국세청 API 오류:", e)
         return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생"}), 500
+        
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))  # Render에서는 PORT 환경변수를 사용함
+    app.run(host="0.0.0.0", port=port)
