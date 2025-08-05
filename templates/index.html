@@ -73,27 +73,34 @@
   <div id="trend-charts"></div>
 </div>
 
-<!-- 기업 정보 검색 탭 -->
-<div id="company-section" class="section">
-  <input type="text" id="companyKeyword" placeholder="예: 삼성전자" />
-  <button onclick="searchCompany()">검색</button>
-  <button onclick="downloadCompanyTable()">테이블 다운로드</button>
-  <table style="margin-top: 20px;">
-    <thead>
-      <tr>
-        <th>사업자명</th>
-        <th>임직원수</th>
-        <th>매출(억원)</th>
-        <th>사업장주소</th>
-        <th>삭제</th>
-      </tr>
-    </thead>
-    <tbody id="companyResults">
-      <tr class="empty-text-row">
-        <td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>
-      </tr>
-    </tbody>
-  </table>
+<!-- 사업자등록 상태조회 탭 -->
+<div class="tab-pane fade" id="company" role="tabpanel" aria-labelledby="company-tab">
+    <div class="my-4">
+        <h5>📁 사업자등록번호 엑셀 업로드</h5>
+        <form id="ntsForm" enctype="multipart/form-data">
+            <div class="input-group mb-3">
+                <input type="file" name="file" accept=".xlsx" class="form-control" required>
+                <button type="submit" class="btn btn-primary">조회</button>
+            </div>
+            <div class="form-text">※ 엑셀에 <strong>'사업자등록번호'</strong> 컬럼이 포함되어 있어야 합니다.</div>
+        </form>
+    </div>
+
+    <div id="ntsResult" class="table-responsive d-none">
+        <h6 class="mt-4">✅ 조회 결과</h6>
+        <table class="table table-bordered table-striped text-center align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>#</th>
+                    <th>사업자등록번호</th>
+                    <th>상태</th>
+                    <th>과세유형</th>
+                    <th>폐업일자</th>
+                </tr>
+            </thead>
+            <tbody id="ntsTableBody"></tbody>
+        </table>
+    </div>
 </div>
 
 <script>
@@ -373,98 +380,46 @@ function renderTrendChart(keyword, period = "30d") {
     });
 }
 
-// Mock 데이터 생성
-function generateMockCompanies(keyword) {
-  const suffixes = ["전자", "테크", "시스템", "솔루션", "네트웍스", "디지털", "아이티", "모터스", "바이오", "건설"];
-  const selected = suffixes.sort(() => 0.5 - Math.random()).slice(0, 5); // 랜덤 5개 선택
+<script>
+document.getElementById("ntsForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
 
-  return selected.map(suffix => ({
-    사업자명: `${keyword}${suffix}`,
-    임직원수: Math.floor(Math.random() * 10000) + 100,
-    매출: Math.floor(Math.random() * 10000) + 100,
-    사업장주소: `서울특별시 ${["강남구", "서초구", "마포구", "송파구"][Math.floor(Math.random() * 4)]}`
-  }));
-}
+    fetch("/api/nts", {
+        method: "POST",
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        const resultBox = document.getElementById("ntsResult");
+        const tableBody = document.getElementById("ntsTableBody");
+        tableBody.innerHTML = "";
 
-// 검색한 기업 리스트 저장
-let companies = [];
+        if (data.error) {
+            alert(data.error);
+            resultBox.classList.add("d-none");
+            return;
+        }
 
-function searchCompany() {
-  const keyword = document.getElementById("companyKeyword").value.trim();
-  if (!keyword) return alert('기업명을 입력해주세요.');
+        data.forEach((item, index) => {
+            const row = `<tr>
+                <td>${index + 1}</td>
+                <td>${item["사업자등록번호"]}</td>
+                <td>${item["상태"]}</td>
+                <td>${item["과세유형"]}</td>
+                <td>${item["폐업일자"] || "-"}</td>
+            </tr>`;
+            tableBody.insertAdjacentHTML("beforeend", row);
+        });
 
-  const newCompanies = generateMockCompanies(keyword);
-
-  newCompanies.forEach(c => {
-    if (!companies.some(existing => existing.사업자명 === c.사업자명)) {
-      companies.push(c);
-    }
-  });
-
-  renderCompanyTable(keyword);
-}
-
-// 기업 테이블 렌더링
-function renderCompanyTable(highlight = "") {
-  const tbody = document.getElementById("companyResults");
-  tbody.innerHTML = "";
-
-  if (!companies.length) {
-    const emptyRow = document.createElement("tr");
-    emptyRow.classList.add("empty-text-row");
-    emptyRow.innerHTML = `<td colspan="5" style="text-align:center; color:#888;">검색 결과가 없습니다.</td>`;
-    tbody.appendChild(emptyRow);
-    return;
-  }
-
-  // 임직원수 기준 내림차순 정렬
-  companies.sort((a, b) => b.임직원수 - a.임직원수);
-
-  companies.forEach((c, idx) => {
-    const row = document.createElement("tr");
-    const highlightName = highlight && c.사업자명.includes(highlight) ?
-      c.사업자명.replaceAll(highlight, `<mark>${highlight}</mark>`) : c.사업자명;
-    
-    row.innerHTML = `
-      <td>${highlightName}</td>
-      <td>${formatNumber(c.임직원수)}</td>
-      <td>${formatNumber(c.매출)}</td>
-      <td>${c.사업장주소}</td>
-      <td><button class="delete-btn" onclick="removeCompany(${idx})">삭제</button></td>
-    `;
-    tbody.appendChild(row);
-  });
-}
-
-// 삭제 기능
-function removeCompany(index) {
-  companies.splice(index, 1);
-  renderCompanyTable();
-}
-
-// 테이블 다운로드 기능
-function downloadCompanyTable() {
-  if (!companies.length) {
-    alert("다운로드할 데이터가 없습니다.");
-    return;
-  }
-
-  let csv = "사업자명,임직원수,매출(억원),사업장주소\n";
-  companies.forEach(item => {
-    csv += `"${item["사업자명"]}","${item["임직원수"]}","${item["매출"]}","${item["사업장주소"]}"\n`;
-  });
-
-  const BOM = "\uFEFF"; // [추가] UTF-8 BOM
-  const blob = new Blob([BOM + csv], { type: "text/csv;charset=utf-8;" }); // [수정] BOM 추가
-
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", "기업정보.csv");
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
+        resultBox.classList.remove("d-none");
+    })
+    .catch(err => {
+        console.error("조회 오류:", err);
+        alert("조회 중 오류가 발생했습니다.");
+    });
+});
 </script>
 
 </body>
