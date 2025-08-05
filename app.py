@@ -111,7 +111,8 @@ def search_nts_status():
         if '사업자등록번호' not in df.columns:
             return jsonify({"error": "'사업자등록번호' 컬럼이 없습니다."}), 400
 
-        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").tolist()
+        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").str.strip()
+        bno_list = [bno for bno in bno_list if bno.isdigit() and len(bno) == 10]
         chunk_size = 100
         result_data = []
 
