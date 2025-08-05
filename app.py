@@ -14,7 +14,6 @@ NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 NTS_API_KEY = os.getenv("NTS_API_KEY")
 
-
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -39,7 +38,6 @@ def search_news():
     try:
         res = requests.get(url, headers=headers, params=params)
         data = res.json().get("items", [])
-
         results = []
         for item in data:
             results.append({
@@ -111,8 +109,13 @@ def search_nts_status():
         if '사업자등록번호' not in df.columns:
             return jsonify({"error": "'사업자등록번호' 컬럼이 없습니다."}), 400
 
-        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").str.strip()
+        # 사업자번호 전처리
+        bno_list = df['사업자등록번호'].astype(str).str.replace("-", "", regex=False).str.strip()
         bno_list = [bno for bno in bno_list if bno.isdigit() and len(bno) == 10]
+
+        if not bno_list:
+            return jsonify({"error": "유효한 10자리 사업자등록번호가 없습니다."}), 400
+
         chunk_size = 100
         result_data = []
 
@@ -124,6 +127,7 @@ def search_nts_status():
 
             res = requests.post(url, headers=headers, json=payload)
             if res.status_code != 200:
+                print("API 호출 실패 상태코드:", res.status_code)
                 return jsonify({"error": f"API 오류: {res.status_code}"}), 500
 
             items = res.json().get("data", [])
@@ -140,7 +144,7 @@ def search_nts_status():
     except Exception as e:
         print("국세청 API 오류:", e)
         return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생"}), 500
-        
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Render에서는 PORT 환경변수를 사용함
     app.run(host="0.0.0.0", port=port)
