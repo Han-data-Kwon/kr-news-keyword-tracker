@@ -13,11 +13,9 @@ CORS(app)
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-# 🔑 환경변수에서 인코딩된 API 키 불러오기 & 디코딩
-ENCODED_KEY = os.getenv("NTS_API_KEY")
-if not ENCODED_KEY:
+NTS_API_KEY = os.getenv("NTS_API_KEY")
+if not NTS_API_KEY:
     raise ValueError("NTS_API_KEY 환경변수가 설정되지 않았습니다.")
-DECODED_KEY = unquote(ENCODED_KEY)
 
 @app.route("/")
 def home():
@@ -130,9 +128,7 @@ def search_nts_status():
 
             # 📨 API 요청
             try:
-                url = (
-                    f"https://api.odcloud.kr/api/nts-businessman/v1/status"
-                    f"?serviceKey={DECODED_KEY}"
+                url = (f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
                 )
                 payload = {"b_no": [biz_num]}
                 headers = {"Content-Type": "application/json"}
