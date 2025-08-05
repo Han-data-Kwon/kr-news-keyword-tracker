@@ -1,6 +1,5 @@
 Flask
-requests
-beautifulsoup4
 flask-cors
 pandas
 openpyxl
+requests
