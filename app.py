@@ -102,7 +102,7 @@ def get_trend():
         return jsonify({"error": "Failed to fetch trend"}), 500
 
 @app.route("/")
-def home():
+def index_home():
     return render_template("index.html")
 
 @app.route("/api/nts", methods=["POST"])
