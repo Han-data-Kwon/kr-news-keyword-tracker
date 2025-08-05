@@ -98,69 +98,54 @@ def get_trend():
         print("네이버 데이터랩 트렌드 API 오류:", e)
         return jsonify({"error": "Failed to fetch trend"}), 500
 
-@app.route("/api/nts", methods=["POST"])
+@app.route('/api/nts', methods=['POST'])
 def search_nts_status():
-    if 'file' not in request.files:
-        return jsonify({"error": "엑셀 파일을 업로드해주세요."}), 400
-
     file = request.files['file']
     try:
         df = pd.read_excel(file)
-
-        print("✅ 업로드된 컬럼명:", df.columns.tolist())  # 디버깅용
+        print("📄 업로드된 컬럼명:", df.columns.tolist())  # 디버깅
 
         if '사업자등록번호' not in df.columns:
             return jsonify({"error": "'사업자등록번호' 컬럼이 없습니다."}), 400
 
-        # 사업자등록번호 정제 및 필터링
+        # 사업자등록번호 전처리
         bno_list = df['사업자등록번호'].astype(str).str.replace("-", "").str.strip()
         bno_list = [bno for bno in bno_list if bno.isdigit() and len(bno) == 10]
 
-        print("📌 정제된 사업자등록번호:", bno_list[:5], "... 총", len(bno_list), "건")  # 디버깅용
+        if not bno_list:
+            return jsonify({"error": "유효한 10자리 사업자등록번호가 없습니다."}), 400
+
+        print("📌 정제된 사업자등록번호:", bno_list[:5], "... 총", len(bno_list), "건")  # 디버깅
 
         chunk_size = 100
         result_data = []
 
+        headers = {"Content-Type": "application/json"}
+        url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
+
         for i in range(0, len(bno_list), chunk_size):
             chunk = bno_list[i:i + chunk_size]
-            if not chunk:
-                continue
-
             payload = {"b_no": chunk}
-            headers = {"Content-Type": "application/json"}
-            url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={urllib.parse.unquote(NTS_API_KEY)}"
 
-            print("🔗 요청 URL:", url)
-            print("📦 요청 Payload:", payload)
+            print("🔗 요청 URL:", url)  # 디버깅
+            print("📦 요청 Payload:", payload)  # 디버깅
 
             res = requests.post(url, headers=headers, json=payload)
+            print("📥 응답 상태:", res.status_code)
+            print("📥 응답 내용:", res.text)
 
-            print("📨 응답 상태:", res.status_code)
-            print("📨 응답 본문:", res.text)
-
-            if res.status_code != 200:
+            if res.status_code == 200:
+                json_data = res.json()
+                result_data.extend(json_data.get("data", []))
+            else:
                 return jsonify({"error": f"API 오류: {res.status_code}"}), 500
-
-            try:
-                items = res.json().get("data", [])
-            except Exception as e:
-                print("❌ JSON 디코딩 실패:", e)
-                print("❌ 응답 원문:", res.text)
-                return jsonify({"error": "API 응답이 올바르지 않습니다."}), 500
-
-            for item in items:
-                result_data.append({
-                    "사업자등록번호": item.get("b_no"),
-                    "상태": item.get("b_stt"),
-                    "과세유형": item.get("tax_type"),
-                    "폐업일자": item.get("end_dt", "")
-                })
 
         return jsonify(result_data)
 
     except Exception as e:
-        print("🚨 전체 오류 발생:", e)
+        print("❌ 예외 발생:", str(e))
         return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생"}), 500
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
