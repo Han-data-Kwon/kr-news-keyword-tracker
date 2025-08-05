@@ -163,4 +163,4 @@ def search_nts_status():
         return jsonify({"error": "파일 처리 또는 API 호출 중 오류 발생"}), 500
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
