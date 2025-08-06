@@ -118,10 +118,12 @@ def search_nts_status():
 
         results = []
         for idx, row in df.iterrows():
-            b_no = str(row["사업자등록번호"]).strip().replace("-", "")
+            raw_b_no = str(row["사업자등록번호"]).strip()
+            b_no = raw_b_no.replace("-", "").zfill(10)
+
             if not b_no.isdigit() or len(b_no) != 10:
                 results.append({
-                    "사업자등록번호": row["사업자등록번호"],
+                    "사업자등록번호": raw_b_no,
                     "상태": "형식 오류",
                     "과세유형": "-",
                     "폐업일자": "-"
@@ -140,6 +142,9 @@ def search_nts_status():
                 response.raise_for_status()
                 json_data = response.json()
 
+                # 🔍 디버깅용 API 응답 확인
+                print(f"[DEBUG] 응답({b_no}):\n", json.dumps(json_data, indent=2, ensure_ascii=False))
+
                 if "data" in json_data and json_data["data"]:
                     item = json_data["data"][0]
                     results.append({
@@ -149,7 +154,6 @@ def search_nts_status():
                         "폐업일자": item.get("end_dt", "-") or "-"
                     })
                 else:
-                    print(f"[API 응답 이상] {response.text}")
                     results.append({
                         "사업자등록번호": b_no,
                         "상태": "조회 실패",
@@ -158,8 +162,7 @@ def search_nts_status():
                     })
 
             except Exception as api_err:
-                print(f"[ERROR] API 요청 실패: {api_err}")
-                print(f"[응답 내용] {response.text}")
+                print(f"[ERROR] API 요청 실패({b_no}): {api_err}")
                 results.append({
                     "사업자등록번호": b_no,
                     "상태": "API 호출 실패",
