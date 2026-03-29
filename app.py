@@ -1,10 +1,34 @@
 import os
 import json
+import ssl
 import requests
+import urllib3
 import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 from flask_cors import CORS
+from requests.adapters import HTTPAdapter
+from urllib3.poolmanager import PoolManager
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+class LegacyDHAdapter(HTTPAdapter):
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        context.set_ciphers("DEFAULT:@SECLEVEL=1")
+        self.poolmanager = PoolManager(
+            num_pools=connections,
+            maxsize=maxsize,
+            block=block,
+            ssl_context=context,
+            **pool_kwargs,
+        )
+
+_dart_session = requests.Session()
+_dart_session.mount("https://", LegacyDHAdapter())
+_dart_session.mount("http://", LegacyDHAdapter())
 
 app = Flask(__name__)
 CORS(app)
@@ -92,12 +116,11 @@ def get_trend():
 
 # ─────────────────────────────────────────────
 # 기업 검색 통합 엔드포인트
-# ?q=회사명&type=all|dart|nps
 # ─────────────────────────────────────────────
 @app.route("/api/company/search")
 def company_search():
     keyword     = request.args.get("q", "").strip()
-    search_type = request.args.get("type", "all")   # all | dart | nps
+    search_type = request.args.get("type", "all")
 
     if not keyword:
         return jsonify({"error": "검색어를 입력해주세요."}), 400
@@ -118,7 +141,7 @@ def company_search():
 
 
 # ─────────────────────────────────────────────
-# DART 기업 상세 (corp_code로 재무정보 포함)
+# DART 기업 상세
 # ─────────────────────────────────────────────
 @app.route("/api/company/dart/detail")
 def dart_detail():
@@ -133,7 +156,7 @@ def dart_detail():
 
 
 # ─────────────────────────────────────────────
-# NTS 사업자 상태 조회 (사업자등록번호)
+# NTS 사업자 상태 조회
 # ─────────────────────────────────────────────
 @app.route("/api/company/nts")
 def company_nts():
@@ -152,15 +175,15 @@ def company_nts():
 def _search_dart(keyword: str) -> list:
     url = "https://opendart.fss.or.kr/api/company.json"
     try:
-        res = requests.get(url, params={
-            "crtfc_key": DART_API_KEY,
-            "corp_name": keyword,
-            "page_no":   1,
+        res = _dart_session.get(url, params={
+            "crtfc_key":  DART_API_KEY,
+            "corp_name":  keyword,
+            "page_no":    1,
             "page_count": 10
-        }, timeout=7)
+        }, timeout=7, verify=False)
         res.raise_for_status()
         data = res.json()
-        print(f"[DART DEBUG] status={data.get('status')}, message={data.get('message')}, count={len(data.get('corp_list', []))}")  # 추가
+        print(f"[DART DEBUG] status={data.get('status')}, count={len(data.get('corp_list', []))}")
         if data.get("status") != "000":
             return []
         return [{
@@ -183,29 +206,29 @@ def _search_dart(keyword: str) -> list:
 def _fetch_dart_company_info(corp_code: str) -> dict:
     url = "https://opendart.fss.or.kr/api/company.json"
     try:
-        res = requests.get(url, params={
+        res = _dart_session.get(url, params={
             "crtfc_key": DART_API_KEY,
             "corp_code": corp_code
-        }, timeout=7)
+        }, timeout=7, verify=False)
         res.raise_for_status()
         d = res.json()
         if d.get("status") != "000":
             return {}
         return {
-            "corp_name":    d.get("corp_name"),
+            "corp_name":     d.get("corp_name"),
             "corp_name_eng": d.get("corp_name_eng", "-"),
-            "stock_code":   d.get("stock_code") or "-",
-            "ceo_nm":       d.get("ceo_nm", "-"),
-            "corp_cls":     _corp_cls_label(d.get("corp_cls")),
-            "jurir_no":     d.get("jurir_no", "-"),
-            "bizr_no":      d.get("bizr_no", "-"),
-            "adres":        d.get("adres", "-"),
-            "hm_url":       d.get("hm_url", "-"),
-            "ir_url":       d.get("ir_url", "-"),
-            "phn_no":       d.get("phn_no", "-"),
-            "induty_code":  d.get("induty_code", "-"),
-            "est_dt":       d.get("est_dt", "-"),
-            "acc_mt":       d.get("acc_mt", "-"),
+            "stock_code":    d.get("stock_code") or "-",
+            "ceo_nm":        d.get("ceo_nm", "-"),
+            "corp_cls":      _corp_cls_label(d.get("corp_cls")),
+            "jurir_no":      d.get("jurir_no", "-"),
+            "bizr_no":       d.get("bizr_no", "-"),
+            "adres":         d.get("adres", "-"),
+            "hm_url":        d.get("hm_url", "-"),
+            "ir_url":        d.get("ir_url", "-"),
+            "phn_no":        d.get("phn_no", "-"),
+            "induty_code":   d.get("induty_code", "-"),
+            "est_dt":        d.get("est_dt", "-"),
+            "acc_mt":        d.get("acc_mt", "-"),
         }
     except Exception as e:
         print(f"[DART INFO ERROR] {e}")
@@ -213,19 +236,19 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: DART 재무정보 (최근 사업연도)
+# 헬퍼: DART 재무정보
 # ─────────────────────────────────────────────
 def _fetch_dart_finance(corp_code: str) -> dict:
     url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
     year = str(datetime.today().year - 1)
     try:
-        res = requests.get(url, params={
-            "crtfc_key": DART_API_KEY,
-            "corp_code": corp_code,
-            "bsns_year": year,
-            "reprt_code": "11011",   # 사업보고서
-            "fs_div":    "CFS"       # 연결재무제표
-        }, timeout=10)
+        res = _dart_session.get(url, params={
+            "crtfc_key":  DART_API_KEY,
+            "corp_code":  corp_code,
+            "bsns_year":  year,
+            "reprt_code": "11011",
+            "fs_div":     "CFS"
+        }, timeout=10, verify=False)
         res.raise_for_status()
         data = res.json()
         if data.get("status") != "000":
@@ -236,10 +259,10 @@ def _fetch_dart_finance(corp_code: str) -> dict:
         for item in data.get("list", []):
             if item.get("account_nm") in targets and item.get("sj_div") in ("IS", "BS"):
                 rows.append({
-                    "항목":   item.get("account_nm"),
-                    "당기":   item.get("thstrm_amount", "-"),
-                    "전기":   item.get("frmtrm_amount", "-"),
-                    "단위":   "원"
+                    "항목": item.get("account_nm"),
+                    "당기": item.get("thstrm_amount", "-"),
+                    "전기": item.get("frmtrm_amount", "-"),
+                    "단위": "원"
                 })
         return {"finance": rows, "finance_year": year}
     except Exception as e:
@@ -248,19 +271,19 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: NPS 사업장 검색 (회사명)
+# 헬퍼: NPS 사업장 검색
 # ─────────────────────────────────────────────
 def _search_nps(keyword: str) -> list:
     url = "https://api.odcloud.kr/api/15083321/v1/uddi:7b5e5f2b-a9a2-4e30-bd3f-76fe4bcf2e79"
     try:
-        res = requests.get(url, params={
+        res = _dart_session.get(url, params={
             "serviceKey": NPS_API_KEY,
             "page":       1,
             "perPage":    10,
             "cond[사업장명::LIKE]": keyword
-        }, timeout=7)
+        }, timeout=7, verify=False)
         res.raise_for_status()
-        print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")  # 추가
+        print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")
         data = res.json().get("data", [])
         return [{
             "사업장명":       d.get("사업장명", "-"),
@@ -283,9 +306,9 @@ def _fetch_nts(b_no: str) -> dict:
         return {"error": "NTS_API_KEY 미설정"}
     url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
     try:
-        res = requests.post(url,
+        res = _dart_session.post(url,
             headers={"Content-Type": "application/json", "Accept": "application/json"},
-            json={"b_no": [b_no]}, timeout=5)
+            json={"b_no": [b_no]}, timeout=5, verify=False)
         res.raise_for_status()
         data = res.json().get("data", [])
         return data[0] if data else {}
