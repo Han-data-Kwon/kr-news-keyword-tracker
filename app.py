@@ -122,17 +122,23 @@ def company_search():
     keyword     = request.args.get("q", "").strip()
     search_type = request.args.get("type", "all")
 
+    print(f"[SEARCH CALLED] keyword={keyword}, type={search_type}")  # 추가
+
     if not keyword:
         return jsonify({"error": "검색어를 입력해주세요."}), 400
 
     dart_results = []
     nps_results  = []
 
+    print("[SEARCH] dart 시작")  # 추가
     if search_type in ("all", "dart"):
         dart_results = _search_dart(keyword)
+    print(f"[SEARCH] dart 완료: {len(dart_results)}건")  # 추가
 
+    print("[SEARCH] nps 시작")  # 추가
     if search_type in ("all", "nps"):
         nps_results = _search_nps(keyword)
+    print(f"[SEARCH] nps 완료: {len(nps_results)}건")  # 추가
 
     return jsonify({
         "dart": dart_results,
