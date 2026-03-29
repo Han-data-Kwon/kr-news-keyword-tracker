@@ -179,26 +179,23 @@ def company_nts():
 # 헬퍼: DART 회사 검색
 # ─────────────────────────────────────────────
 def _search_dart(keyword: str) -> list:
-    # DART 공시검색 API로 회사명 검색
-    url = "https://opendart.fss.or.kr/api/list.json"
+    url = "https://opendart.fss.or.kr/api/corpSearch.json"
     try:
         res = _dart_session.get(url, params={
-            "crtfc_key":  DART_API_KEY,
-            "corp_name":  keyword,
-            "page_no":    1,
-            "page_count": 10,
-            "last_reprt_at": "Y"
+            "crtfc_key": DART_API_KEY,
+            "corp_name": keyword,
+            "page_no":   1,
+            "page_count": 10
         }, timeout=7, verify=False)
         res.raise_for_status()
         data = res.json()
         print(f"[DART DEBUG] status={data.get('status')}, message={data.get('message')}")
         if data.get("status") != "000":
-            print(f"[DART DEBUG] 응답 전체: {data}")
             return []
 
         seen = set()
         results = []
-        for c in data.get("list", []):
+        for c in data.get("corp_list", []):
             corp_code = c.get("corp_code")
             if corp_code in seen:
                 continue
@@ -208,12 +205,11 @@ def _search_dart(keyword: str) -> list:
                 "corp_name":  c.get("corp_name"),
                 "stock_code": c.get("stock_code") or "-",
                 "corp_cls":   _corp_cls_label(c.get("corp_cls")),
-                "jurir_no":   "-",
-                "bizr_no":    "-",
+                "jurir_no":   c.get("jurir_no", "-"),
+                "bizr_no":    c.get("bizr_no", "-"),
                 "source":     "DART"
             })
         return results
-
     except Exception as e:
         print(f"[DART SEARCH ERROR] {e}")
         return []
@@ -294,13 +290,13 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 # ─────────────────────────────────────────────
 def _search_nps(keyword: str) -> list:
     base_url = "https://api.odcloud.kr/api/15083321/v1/uddi:7b5e5f2b-a9a2-4e30-bd3f-76fe4bcf2e79"
-    query_string = (
-        f"serviceKey={NPS_API_KEY}"
+    full_url = (
+        f"{base_url}"
+        f"?serviceKey={NPS_API_KEY}"
         f"&page=1"
         f"&perPage=10"
         f"&cond[사업장명::LIKE]={requests.utils.quote(keyword)}"
     )
-    full_url = f"{base_url}?{query_string}"
     try:
         res = _dart_session.get(full_url, timeout=7, verify=False)
         res.raise_for_status()
