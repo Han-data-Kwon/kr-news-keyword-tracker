@@ -160,16 +160,17 @@ def _search_dart(keyword: str) -> list:
         }, timeout=7)
         res.raise_for_status()
         data = res.json()
+        print(f"[DART DEBUG] status={data.get('status')}, message={data.get('message')}, count={len(data.get('corp_list', []))}")  # 추가
         if data.get("status") != "000":
             return []
         return [{
-            "corp_code":   c.get("corp_code"),
-            "corp_name":   c.get("corp_name"),
-            "stock_code":  c.get("stock_code") or "-",
-            "corp_cls":    _corp_cls_label(c.get("corp_cls")),
-            "jurir_no":    c.get("jurir_no", "-"),
-            "bizr_no":     c.get("bizr_no", "-"),
-            "source":      "DART"
+            "corp_code":  c.get("corp_code"),
+            "corp_name":  c.get("corp_name"),
+            "stock_code": c.get("stock_code") or "-",
+            "corp_cls":   _corp_cls_label(c.get("corp_cls")),
+            "jurir_no":   c.get("jurir_no", "-"),
+            "bizr_no":    c.get("bizr_no", "-"),
+            "source":     "DART"
         } for c in data.get("corp_list", [])]
     except Exception as e:
         print(f"[DART SEARCH ERROR] {e}")
@@ -259,6 +260,7 @@ def _search_nps(keyword: str) -> list:
             "cond[사업장명::LIKE]": keyword
         }, timeout=7)
         res.raise_for_status()
+        print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")  # 추가
         data = res.json().get("data", [])
         return [{
             "사업장명":       d.get("사업장명", "-"),
