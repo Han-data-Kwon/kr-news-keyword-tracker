@@ -179,41 +179,47 @@ def company_nts():
 # 헬퍼: DART 회사 검색
 # ─────────────────────────────────────────────
 def _search_dart(keyword: str) -> list:
-    url = "https://opendart.fss.or.kr/api/corpSearch.json"
+    # DART 전체 기업 목록 다운로드 후 키워드 필터
+    url = "https://opendart.fss.or.kr/api/corpCode.xml"
     try:
         res = _dart_session.get(url, params={
-            "crtfc_key": DART_API_KEY,
-            "corp_name": keyword,
-            "page_no":   1,
-            "page_count": 10
-        }, timeout=7, verify=False)
+            "crtfc_key": DART_API_KEY
+        }, timeout=15, verify=False)
         res.raise_for_status()
-        data = res.json()
-        print(f"[DART DEBUG] status={data.get('status')}, message={data.get('message')}")
-        if data.get("status") != "000":
-            return []
 
-        seen = set()
+        # zip 압축 해제
+        import zipfile
+        import io
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(io.BytesIO(res.content)) as z:
+            xml_filename = z.namelist()[0]
+            with z.open(xml_filename) as f:
+                tree = ET.parse(f)
+                root = tree.getroot()
+
         results = []
-        for c in data.get("corp_list", []):
-            corp_code = c.get("corp_code")
-            if corp_code in seen:
-                continue
-            seen.add(corp_code)
-            results.append({
-                "corp_code":  corp_code,
-                "corp_name":  c.get("corp_name"),
-                "stock_code": c.get("stock_code") or "-",
-                "corp_cls":   _corp_cls_label(c.get("corp_cls")),
-                "jurir_no":   c.get("jurir_no", "-"),
-                "bizr_no":    c.get("bizr_no", "-"),
-                "source":     "DART"
-            })
+        for item in root.findall("list"):
+            corp_name = item.findtext("corp_name", "")
+            if keyword.lower() in corp_name.lower():
+                results.append({
+                    "corp_code":  item.findtext("corp_code", "-"),
+                    "corp_name":  corp_name,
+                    "stock_code": item.findtext("stock_code", "-") or "-",
+                    "corp_cls":   _corp_cls_label(item.findtext("corp_cls", "")),
+                    "jurir_no":   "-",
+                    "bizr_no":    "-",
+                    "source":     "DART"
+                })
+            if len(results) >= 10:
+                break
+
+        print(f"[DART DEBUG] 검색결과: {len(results)}건")
         return results
+
     except Exception as e:
         print(f"[DART SEARCH ERROR] {e}")
         return []
-
 
 # ─────────────────────────────────────────────
 # 헬퍼: DART 기업 기본정보
@@ -289,31 +295,41 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 # 헬퍼: NPS 사업장 검색
 # ─────────────────────────────────────────────
 def _search_nps(keyword: str) -> list:
-    base_url = "https://api.odcloud.kr/api/15083321/v1/uddi:7b5e5f2b-a9a2-4e30-bd3f-76fe4bcf2e79"
-    full_url = (
-        f"{base_url}"
-        f"?serviceKey={NPS_API_KEY}"
-        f"&page=1"
-        f"&perPage=10"
-        f"&cond[사업장명::LIKE]={requests.utils.quote(keyword)}"
-    )
+    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2"
     try:
-        res = _dart_session.get(full_url, timeout=7, verify=False)
+        res = _dart_session.get(url, params={
+            "serviceKey": NPS_API_KEY,
+            "wkplNm":     keyword,
+            "dataType":   "json",
+            "pageNo":     1,
+            "numOfRows":  10
+        }, timeout=7, verify=False)
         res.raise_for_status()
         print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")
-        data = res.json().get("data", [])
+
+        data = res.json()
+        # 응답 구조: items.item[]
+        items = data.get("items", {})
+        if isinstance(items, dict):
+            item_list = items.get("item", [])
+        else:
+            item_list = items
+
+        if isinstance(item_list, dict):  # 단건일 때 dict로 오는 경우
+            item_list = [item_list]
+
         return [{
-            "사업장명":       d.get("사업장명", "-"),
-            "사업자등록번호": d.get("사업자등록번호", "-"),
-            "가입자수":       d.get("가입자수", "-"),
-            "주소":           d.get("주소", "-"),
-            "업종":           d.get("업종명", "-"),
+            "사업장명":       d.get("wkplNm", "-"),
+            "사업자등록번호": d.get("bzowrRgstNo", "-"),
+            "가입자수":       d.get("totMnbscNpc", "-"),
+            "주소":           d.get("wkplAddr", "-"),
+            "업종":           d.get("ndbizNm", "-"),
             "source":         "NPS"
-        } for d in data]
+        } for d in item_list]
+
     except Exception as e:
         print(f"[NPS SEARCH ERROR] {e}")
         return []
-
 
 # ─────────────────────────────────────────────
 # 헬퍼: NTS 사업자 상태 단건
