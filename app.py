@@ -1,26 +1,32 @@
 import os
+import json
 import requests
-import xml.etree.ElementTree as ET
 import pandas as pd
-import urllib.parse
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime, timedelta
 from flask_cors import CORS
-from urllib.parse import unquote
 
 app = Flask(__name__)
 CORS(app)
 
-NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
+NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NTS_API_KEY = os.getenv("NTS_API_KEY")
-if not NTS_API_KEY:
-    raise ValueError("NTS_API_KEY 환경변수가 설정되지 않았습니다.")
+NTS_API_KEY         = os.getenv("NTS_API_KEY")
+NPS_API_KEY         = os.getenv("NPS_API_KEY", "6eb71aa2822504015095fc5fcab3fa15faabcd5e55f8d96a9fbe7edc0514cb73")
+DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
 
+
+# ─────────────────────────────────────────────
+# 공통 라우트
+# ─────────────────────────────────────────────
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
+# ─────────────────────────────────────────────
+# 뉴스 검색
+# ─────────────────────────────────────────────
 @app.route("/api/search_news")
 def search_news():
     keyword = request.args.get("q", "").strip()
@@ -32,45 +38,34 @@ def search_news():
         "X-Naver-Client-Id": NAVER_CLIENT_ID,
         "X-Naver-Client-Secret": NAVER_CLIENT_SECRET
     }
-    params = {
-        "query": keyword,
-        "display": 10,
-        "sort": "date"
-    }
+    params = {"query": keyword, "display": 10, "sort": "date"}
 
     try:
         res = requests.get(url, headers=headers, params=params)
         data = res.json().get("items", [])
-        results = []
-        for item in data:
-            results.append({
-                "title": item.get("title", "").replace("<b>", "").replace("</b>", ""),
-                "link": item.get("link"),
-                "source": item.get("originallink") or item.get("link"),
-                "date": item.get("pubDate", "")
-            })
-        return jsonify(results)
-
+        return jsonify([{
+            "title": item.get("title", "").replace("<b>", "").replace("</b>", ""),
+            "link": item.get("link"),
+            "source": item.get("originallink") or item.get("link"),
+            "date": item.get("pubDate", "")
+        } for item in data])
     except Exception as e:
         print("NAVER 뉴스 API 오류:", e)
         return jsonify([])
 
+
+# ─────────────────────────────────────────────
+# 네이버 데이터랩 트렌드
+# ─────────────────────────────────────────────
 @app.route("/api/trend")
 def get_trend():
     keyword = request.args.get("q")
-    period = request.args.get("period", "30d")
-
+    period  = request.args.get("period", "30d")
     if not keyword:
         return jsonify({"error": "Missing keyword"}), 400
 
-    end_date = datetime.today()
-    if period == "1y":
-        start_date = end_date - timedelta(days=365)
-    else:
-        start_date = end_date - timedelta(days=30)
-
-    start_str = start_date.strftime("%Y-%m-%d")
-    end_str = end_date.strftime("%Y-%m-%d")
+    end_date   = datetime.today()
+    start_date = end_date - timedelta(days=365 if period == "1y" else 30)
 
     url = "https://openapi.naver.com/v1/datalab/search"
     headers = {
@@ -79,102 +74,227 @@ def get_trend():
         "Content-Type": "application/json"
     }
     payload = {
-        "startDate": start_str,
-        "endDate": end_str,
+        "startDate": start_date.strftime("%Y-%m-%d"),
+        "endDate":   end_date.strftime("%Y-%m-%d"),
         "timeUnit": "date",
-        "keywordGroups": [
-            {
-                "groupName": keyword,
-                "keywords": [keyword]
-            }
-        ]
+        "keywordGroups": [{"groupName": keyword, "keywords": [keyword]}]
     }
 
     try:
         res = requests.post(url, headers=headers, json=payload)
         res.raise_for_status()
         data = res.json()
-        result = [{"date": d["period"], "ratio": d["ratio"]} for d in data["results"][0]["data"]]
-        return jsonify(result)
-
+        return jsonify([{"date": d["period"], "ratio": d["ratio"]} for d in data["results"][0]["data"]])
     except Exception as e:
-        print("네이버 데이터랩 트렌드 API 오류:", e)
+        print("트렌드 API 오류:", e)
         return jsonify({"error": "Failed to fetch trend"}), 500
 
-@app.route("/")
-def index_home():
-    return render_template("index.html")
 
-@app.route("/api/nts", methods=["POST"])
-def search_nts_status():
+# ─────────────────────────────────────────────
+# 기업 검색 통합 엔드포인트
+# ?q=회사명&type=all|dart|nps
+# ─────────────────────────────────────────────
+@app.route("/api/company/search")
+def company_search():
+    keyword     = request.args.get("q", "").strip()
+    search_type = request.args.get("type", "all")   # all | dart | nps
+
+    if not keyword:
+        return jsonify({"error": "검색어를 입력해주세요."}), 400
+
+    dart_results = []
+    nps_results  = []
+
+    if search_type in ("all", "dart"):
+        dart_results = _search_dart(keyword)
+
+    if search_type in ("all", "nps"):
+        nps_results = _search_nps(keyword)
+
+    return jsonify({
+        "dart": dart_results,
+        "nps":  nps_results
+    })
+
+
+# ─────────────────────────────────────────────
+# DART 기업 상세 (corp_code로 재무정보 포함)
+# ─────────────────────────────────────────────
+@app.route("/api/company/dart/detail")
+def dart_detail():
+    corp_code = request.args.get("corp_code", "").strip()
+    if not corp_code:
+        return jsonify({"error": "corp_code 필요"}), 400
+
+    info    = _fetch_dart_company_info(corp_code)
+    finance = _fetch_dart_finance(corp_code)
+
+    return jsonify({**info, **finance})
+
+
+# ─────────────────────────────────────────────
+# NTS 사업자 상태 조회 (사업자등록번호)
+# ─────────────────────────────────────────────
+@app.route("/api/company/nts")
+def company_nts():
+    b_no_raw = request.args.get("b_no", "").strip()
+    b_no     = b_no_raw.replace("-", "").zfill(10)
+
+    if not b_no.isdigit() or len(b_no) != 10:
+        return jsonify({"error": "사업자등록번호 형식 오류 (10자리)"}), 400
+
+    return jsonify(_fetch_nts(b_no))
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: DART 회사 검색
+# ─────────────────────────────────────────────
+def _search_dart(keyword: str) -> list:
+    url = "https://opendart.fss.or.kr/api/company.json"
     try:
-        file = request.files.get("file")
-        if not file:
-            return jsonify({"error": "파일이 업로드되지 않았습니다."}), 400
-
-        df = pd.read_excel(file)
-        if "사업자등록번호" not in df.columns:
-            return jsonify({"error": "'사업자등록번호' 컬럼이 필요합니다."}), 400
-
-        results = []
-        for idx, row in df.iterrows():
-            raw_b_no = str(row["사업자등록번호"]).strip()
-            b_no = raw_b_no.replace("-", "").zfill(10)
-
-            if not b_no.isdigit() or len(b_no) != 10:
-                results.append({
-                    "사업자등록번호": raw_b_no,
-                    "상태": "형식 오류",
-                    "과세유형": "-",
-                    "폐업일자": "-"
-                })
-                continue
-
-            url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
-            payload = { "b_no": [b_no] }
-            headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            }
-
-            try:
-                response = requests.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                json_data = response.json()
-
-                # 🔍 디버깅용 API 응답 확인
-                print(f"[DEBUG] 응답({b_no}):\n", json.dumps(json_data, indent=2, ensure_ascii=False))
-
-                if "data" in json_data and json_data["data"]:
-                    item = json_data["data"][0]
-                    results.append({
-                        "사업자등록번호": b_no,
-                        "상태": item.get("b_stt", "N/A"),
-                        "과세유형": item.get("tax_type", "N/A"),
-                        "폐업일자": item.get("end_dt", "-") or "-"
-                    })
-                else:
-                    results.append({
-                        "사업자등록번호": b_no,
-                        "상태": "조회 실패",
-                        "과세유형": "-",
-                        "폐업일자": "-"
-                    })
-
-            except Exception as api_err:
-                print(f"[ERROR] API 요청 실패({b_no}): {api_err}")
-                results.append({
-                    "사업자등록번호": b_no,
-                    "상태": "API 호출 실패",
-                    "과세유형": "-",
-                    "폐업일자": "-"
-                })
-
-        return jsonify(results)
-
+        res = requests.get(url, params={
+            "crtfc_key": DART_API_KEY,
+            "corp_name": keyword,
+            "page_no":   1,
+            "page_count": 10
+        }, timeout=7)
+        res.raise_for_status()
+        data = res.json()
+        if data.get("status") != "000":
+            return []
+        return [{
+            "corp_code":   c.get("corp_code"),
+            "corp_name":   c.get("corp_name"),
+            "stock_code":  c.get("stock_code") or "-",
+            "corp_cls":    _corp_cls_label(c.get("corp_cls")),
+            "jurir_no":    c.get("jurir_no", "-"),
+            "bizr_no":     c.get("bizr_no", "-"),
+            "source":      "DART"
+        } for c in data.get("corp_list", [])]
     except Exception as e:
-        print(f"[ERROR] 전체 처리 실패: {e}")
-        return jsonify({"error": f"파일 처리 중 오류 발생: {str(e)}"}), 500
+        print(f"[DART SEARCH ERROR] {e}")
+        return []
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: DART 기업 기본정보
+# ─────────────────────────────────────────────
+def _fetch_dart_company_info(corp_code: str) -> dict:
+    url = "https://opendart.fss.or.kr/api/company.json"
+    try:
+        res = requests.get(url, params={
+            "crtfc_key": DART_API_KEY,
+            "corp_code": corp_code
+        }, timeout=7)
+        res.raise_for_status()
+        d = res.json()
+        if d.get("status") != "000":
+            return {}
+        return {
+            "corp_name":    d.get("corp_name"),
+            "corp_name_eng": d.get("corp_name_eng", "-"),
+            "stock_code":   d.get("stock_code") or "-",
+            "ceo_nm":       d.get("ceo_nm", "-"),
+            "corp_cls":     _corp_cls_label(d.get("corp_cls")),
+            "jurir_no":     d.get("jurir_no", "-"),
+            "bizr_no":      d.get("bizr_no", "-"),
+            "adres":        d.get("adres", "-"),
+            "hm_url":       d.get("hm_url", "-"),
+            "ir_url":       d.get("ir_url", "-"),
+            "phn_no":       d.get("phn_no", "-"),
+            "induty_code":  d.get("induty_code", "-"),
+            "est_dt":       d.get("est_dt", "-"),
+            "acc_mt":       d.get("acc_mt", "-"),
+        }
+    except Exception as e:
+        print(f"[DART INFO ERROR] {e}")
+        return {}
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: DART 재무정보 (최근 사업연도)
+# ─────────────────────────────────────────────
+def _fetch_dart_finance(corp_code: str) -> dict:
+    url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
+    year = str(datetime.today().year - 1)
+    try:
+        res = requests.get(url, params={
+            "crtfc_key": DART_API_KEY,
+            "corp_code": corp_code,
+            "bsns_year": year,
+            "reprt_code": "11011",   # 사업보고서
+            "fs_div":    "CFS"       # 연결재무제표
+        }, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+        if data.get("status") != "000":
+            return {"finance": []}
+
+        targets = {"매출액", "영업이익", "당기순이익", "자본총계", "부채총계", "자산총계"}
+        rows = []
+        for item in data.get("list", []):
+            if item.get("account_nm") in targets and item.get("sj_div") in ("IS", "BS"):
+                rows.append({
+                    "항목":   item.get("account_nm"),
+                    "당기":   item.get("thstrm_amount", "-"),
+                    "전기":   item.get("frmtrm_amount", "-"),
+                    "단위":   "원"
+                })
+        return {"finance": rows, "finance_year": year}
+    except Exception as e:
+        print(f"[DART FINANCE ERROR] {e}")
+        return {"finance": [], "finance_year": year}
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: NPS 사업장 검색 (회사명)
+# ─────────────────────────────────────────────
+def _search_nps(keyword: str) -> list:
+    url = "https://api.odcloud.kr/api/15083321/v1/uddi:7b5e5f2b-a9a2-4e30-bd3f-76fe4bcf2e79"
+    try:
+        res = requests.get(url, params={
+            "serviceKey": NPS_API_KEY,
+            "page":       1,
+            "perPage":    10,
+            "cond[사업장명::LIKE]": keyword
+        }, timeout=7)
+        res.raise_for_status()
+        data = res.json().get("data", [])
+        return [{
+            "사업장명":       d.get("사업장명", "-"),
+            "사업자등록번호": d.get("사업자등록번호", "-"),
+            "가입자수":       d.get("가입자수", "-"),
+            "주소":           d.get("주소", "-"),
+            "업종":           d.get("업종명", "-"),
+            "source":         "NPS"
+        } for d in data]
+    except Exception as e:
+        print(f"[NPS SEARCH ERROR] {e}")
+        return []
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: NTS 사업자 상태 단건
+# ─────────────────────────────────────────────
+def _fetch_nts(b_no: str) -> dict:
+    if not NTS_API_KEY:
+        return {"error": "NTS_API_KEY 미설정"}
+    url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
+    try:
+        res = requests.post(url,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            json={"b_no": [b_no]}, timeout=5)
+        res.raise_for_status()
+        data = res.json().get("data", [])
+        return data[0] if data else {}
+    except Exception as e:
+        print(f"[NTS ERROR] {e}")
+        return {}
+
+
+def _corp_cls_label(cls: str) -> str:
+    return {"Y": "유가증권(KOSPI)", "K": "코스닥(KOSDAQ)", "N": "코넥스", "E": "기타(비상장)"}.get(cls or "", cls or "-")
+
 
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
