@@ -1,6 +1,9 @@
 import os
 import json
 import ssl
+import io
+import zipfile
+import xml.etree.ElementTree as ET
 import requests
 import urllib3
 import pandas as pd
@@ -38,6 +41,38 @@ NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 NTS_API_KEY         = os.getenv("NTS_API_KEY")
 NPS_API_KEY         = os.getenv("NPS_API_KEY", "6eb71aa2822504015095fc5fcab3fa15faabcd5e55f8d96a9fbe7edc0514cb73")
 DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
+
+# ─────────────────────────────────────────────
+# DART 기업 목록 캐시 (서버 시작 시 1회 로드)
+# ─────────────────────────────────────────────
+_dart_corp_list = []
+
+def _load_dart_corp_list():
+    global _dart_corp_list
+    url = "https://opendart.fss.or.kr/api/corpCode.xml"
+    try:
+        print("[DART CACHE] 기업 목록 로딩 시작...")
+        res = _dart_session.get(url, params={"crtfc_key": DART_API_KEY}, timeout=30, verify=False)
+        res.raise_for_status()
+        with zipfile.ZipFile(io.BytesIO(res.content)) as z:
+            with z.open(z.namelist()[0]) as f:
+                root = ET.parse(f).getroot()
+        _dart_corp_list = [
+            {
+                "corp_code":  item.findtext("corp_code", ""),
+                "corp_name":  item.findtext("corp_name", ""),
+                "stock_code": item.findtext("stock_code", "") or "-",
+                "corp_cls":   item.findtext("corp_cls", "")
+            }
+            for item in root.findall("list")
+        ]
+        print(f"[DART CACHE] 로딩 완료: {len(_dart_corp_list):,}개 기업")
+    except Exception as e:
+        print(f"[DART CACHE ERROR] {e}")
+
+# 서버 시작 시 1회 실행
+with app.app_context():
+    _load_dart_corp_list()
 
 
 # ─────────────────────────────────────────────
@@ -122,7 +157,7 @@ def company_search():
     keyword     = request.args.get("q", "").strip()
     search_type = request.args.get("type", "all")
 
-    print(f"[SEARCH CALLED] keyword={keyword}, type={search_type}")  # 추가
+    print(f"[SEARCH CALLED] keyword={keyword}, type={search_type}")
 
     if not keyword:
         return jsonify({"error": "검색어를 입력해주세요."}), 400
@@ -130,15 +165,13 @@ def company_search():
     dart_results = []
     nps_results  = []
 
-    print("[SEARCH] dart 시작")  # 추가
     if search_type in ("all", "dart"):
         dart_results = _search_dart(keyword)
-    print(f"[SEARCH] dart 완료: {len(dart_results)}건")  # 추가
+    print(f"[SEARCH] dart 완료: {len(dart_results)}건")
 
-    print("[SEARCH] nps 시작")  # 추가
     if search_type in ("all", "nps"):
         nps_results = _search_nps(keyword)
-    print(f"[SEARCH] nps 완료: {len(nps_results)}건")  # 추가
+    print(f"[SEARCH] nps 완료: {len(nps_results)}건")
 
     return jsonify({
         "dart": dart_results,
@@ -176,50 +209,30 @@ def company_nts():
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: DART 회사 검색
+# 헬퍼: DART 회사 검색 (캐시 사용)
 # ─────────────────────────────────────────────
 def _search_dart(keyword: str) -> list:
-    # DART 전체 기업 목록 다운로드 후 키워드 필터
-    url = "https://opendart.fss.or.kr/api/corpCode.xml"
     try:
-        res = _dart_session.get(url, params={
-            "crtfc_key": DART_API_KEY
-        }, timeout=15, verify=False)
-        res.raise_for_status()
-
-        # zip 압축 해제
-        import zipfile
-        import io
-        import xml.etree.ElementTree as ET
-
-        with zipfile.ZipFile(io.BytesIO(res.content)) as z:
-            xml_filename = z.namelist()[0]
-            with z.open(xml_filename) as f:
-                tree = ET.parse(f)
-                root = tree.getroot()
-
         results = []
-        for item in root.findall("list"):
-            corp_name = item.findtext("corp_name", "")
-            if keyword.lower() in corp_name.lower():
+        for item in _dart_corp_list:
+            if keyword.lower() in item["corp_name"].lower():
                 results.append({
-                    "corp_code":  item.findtext("corp_code", "-"),
-                    "corp_name":  corp_name,
-                    "stock_code": item.findtext("stock_code", "-") or "-",
-                    "corp_cls":   _corp_cls_label(item.findtext("corp_cls", "")),
+                    "corp_code":  item["corp_code"],
+                    "corp_name":  item["corp_name"],
+                    "stock_code": item["stock_code"],
+                    "corp_cls":   _corp_cls_label(item["corp_cls"]),
                     "jurir_no":   "-",
                     "bizr_no":    "-",
                     "source":     "DART"
                 })
             if len(results) >= 10:
                 break
-
         print(f"[DART DEBUG] 검색결과: {len(results)}건")
         return results
-
     except Exception as e:
         print(f"[DART SEARCH ERROR] {e}")
         return []
+
 
 # ─────────────────────────────────────────────
 # 헬퍼: DART 기업 기본정보
@@ -251,7 +264,6 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
             "est_dt":        d.get("est_dt", "-"),
             "acc_mt":        d.get("acc_mt", "-"),
         }
-        # 임직원수 추가 조회
         result["emp_count"] = _fetch_dart_emp(corp_code)
         return result
     except Exception as e:
@@ -267,7 +279,7 @@ def _fetch_dart_emp(corp_code: str) -> str:
             "crtfc_key":  DART_API_KEY,
             "corp_code":  corp_code,
             "bsns_year":  year,
-            "reprt_code": "11011"  # 사업보고서
+            "reprt_code": "11011"
         }, timeout=7, verify=False)
         res.raise_for_status()
         data = res.json()
@@ -284,6 +296,7 @@ def _fetch_dart_emp(corp_code: str) -> str:
     except Exception as e:
         print(f"[DART EMP ERROR] {e}")
         return "-"
+
 
 # ─────────────────────────────────────────────
 # 헬퍼: DART 재무정보
@@ -346,7 +359,6 @@ def _search_nps(keyword: str) -> list:
             company["_rank"] = _nps_relevance_rank(keyword, company["사업장명"])
             companies.append(company)
 
-        # 중복제거 (seq 최신 기준)
         dedup = {}
         for c in companies:
             key = (c["사업장명"].strip().lower(), c["주소"].strip().lower())
@@ -412,9 +424,10 @@ def _nps_to_int(value) -> int:
 def _nps_relevance_rank(keyword: str, name: str) -> int:
     kw = keyword.strip().lower()
     nm = name.strip().lower()
-    if nm == kw:       return 0
+    if nm == kw:          return 0
     if nm.startswith(kw): return 1
     return 2
+
 
 # ─────────────────────────────────────────────
 # 헬퍼: NTS 사업자 상태 단건
