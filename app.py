@@ -324,42 +324,97 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 # 헬퍼: NPS 사업장 검색
 # ─────────────────────────────────────────────
 def _search_nps(keyword: str) -> list:
-    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2"
     try:
-        res = _dart_session.get(url, params={
-            "serviceKey": NPS_API_KEY,
-            "wkplNm":     keyword,
-            "dataType":   "json",
-            "pageNo":     1,
-            "numOfRows":  10
-        }, timeout=20, verify=False)
-        res.raise_for_status()
-        print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")
+        basic_rows = _nps_basic_search(keyword)
+        companies = []
 
-        data = res.json()
-        items = data.get("items", {})
-        if isinstance(items, dict):
-            item_list = items.get("item", [])
-        else:
-            item_list = items
-        if isinstance(item_list, dict):
-            item_list = [item_list]
+        for row in basic_rows:
+            seq = _nps_to_int(row.get("seq", 0))
+            if seq == 0:
+                continue
+
+            detail = _nps_detail_search(seq)
+            company = {
+                "사업장명":       detail.get("wkplNm") or row.get("wkplNm", "-"),
+                "사업자등록번호": row.get("bzowrRgstNo", "-"),
+                "가입자수":       _nps_to_int(detail.get("jnngpCnt", 0)),
+                "주소":           detail.get("wkplRoadNmDtlAddr") or row.get("wkplRoadNmDtlAddr", "-"),
+                "업종":           detail.get("vldtVlKrnNm", "-"),
+                "seq":            seq,
+                "source":         "NPS"
+            }
+            company["_rank"] = _nps_relevance_rank(keyword, company["사업장명"])
+            companies.append(company)
+
+        # 중복제거 (seq 최신 기준)
+        dedup = {}
+        for c in companies:
+            key = (c["사업장명"].strip().lower(), c["주소"].strip().lower())
+            if key not in dedup or c["seq"] > dedup[key]["seq"]:
+                dedup[key] = c
+
+        sorted_list = sorted(dedup.values(), key=lambda x: (x["_rank"], -x["가입자수"]))
 
         return [{
-            "사업장명":       d.get("wkplNm", "-"),
-            "사업자등록번호": d.get("bzowrRgstNo", "-"),
-            "가입자수":       d.get("totMnbscNpc", "-"),
-            "주소":           d.get("wkplAddr", "-"),
-            "업종":           d.get("ndbizNm", "-"),
+            "사업장명":       c["사업장명"],
+            "사업자등록번호": c["사업자등록번호"],
+            "가입자수":       c["가입자수"],
+            "주소":           c["주소"],
+            "업종":           c["업종"],
             "source":         "NPS"
-        } for d in item_list]
+        } for c in sorted_list]
 
-    except requests.exceptions.Timeout:
-        print(f"[NPS TIMEOUT] 응답 지연으로 조회 실패")
-        return []
     except Exception as e:
         print(f"[NPS SEARCH ERROR] {e}")
         return []
+
+
+def _nps_basic_search(keyword: str) -> list:
+    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2"
+    res = _dart_session.get(url, params={
+        "serviceKey": NPS_API_KEY,
+        "wkplNm":     keyword,
+        "dataType":   "json",
+        "pageNo":     1,
+        "numOfRows":  20
+    }, timeout=20, verify=False)
+    res.raise_for_status()
+    print(f"[NPS BASIC] status={res.status_code}, raw={res.text[:200]}")
+    return _nps_extract_items(res.json())
+
+
+def _nps_detail_search(seq: int) -> dict:
+    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getDetailInfoSearchV2"
+    res = _dart_session.get(url, params={
+        "serviceKey": NPS_API_KEY,
+        "seq":        seq,
+        "dataType":   "json"
+    }, timeout=20, verify=False)
+    res.raise_for_status()
+    rows = _nps_extract_items(res.json())
+    return rows[0] if rows else {}
+
+
+def _nps_extract_items(payload: dict) -> list:
+    rows = payload.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+    if isinstance(rows, dict):
+        return [rows]
+    return rows if isinstance(rows, list) else []
+
+
+def _nps_to_int(value) -> int:
+    try:
+        return int(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _nps_relevance_rank(keyword: str, name: str) -> int:
+    kw = keyword.strip().lower()
+    nm = name.strip().lower()
+    if nm == kw:       return 0
+    if nm.startswith(kw): return 1
+    return 2
 
 # ─────────────────────────────────────────────
 # 헬퍼: NTS 사업자 상태 단건
