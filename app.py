@@ -45,11 +45,11 @@ NTS_API_KEY         = os.getenv("NTS_API_KEY")
 NPS_API_KEY         = os.getenv("NPS_API_KEY", "6eb71aa2822504015095fc5fcab3fa15faabcd5e55f8d96a9fbe7edc0514cb73")
 DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
 
-CORP_CODE_CACHE_SECONDS = 60 * 60 * 12  # 12시간
-REPORT_CODES = ["11011", "11014", "11012", "11013"]  # 사업/반기/1분기/3분기
+CORP_CODE_CACHE_SECONDS = 60 * 60 * 12
+REPORT_CODES = ["11011", "11014", "11012", "11013"]
 
 # ─────────────────────────────────────────────
-# DART 기업 목록 캐시 (12시간 자동 갱신)
+# DART 기업 목록 캐시
 # ─────────────────────────────────────────────
 _corp_code_cache = {"fetched_at": 0.0, "companies": []}
 _corp_code_lock  = threading.Lock()
@@ -91,7 +91,6 @@ def _download_corp_codes() -> list:
         print(f"[DART CACHE ERROR] {e}")
         return []
 
-# 서버 시작 시 1회 선로딩
 with app.app_context():
     _get_corp_codes()
 
@@ -124,10 +123,10 @@ def search_news():
         res = requests.get(url, headers=headers, params=params)
         data = res.json().get("items", [])
         return jsonify([{
-            "title": item.get("title", "").replace("<b>", "").replace("</b>", ""),
-            "link":  item.get("link"),
+            "title":  item.get("title", "").replace("<b>", "").replace("</b>", ""),
+            "link":   item.get("link"),
             "source": item.get("originallink") or item.get("link"),
-            "date":  item.get("pubDate", "")
+            "date":   item.get("pubDate", "")
         } for item in data])
     except Exception as e:
         print("NAVER 뉴스 API 오류:", e)
@@ -156,7 +155,7 @@ def get_trend():
     payload = {
         "startDate": start_date.strftime("%Y-%m-%d"),
         "endDate":   end_date.strftime("%Y-%m-%d"),
-        "timeUnit": "date",
+        "timeUnit":  "date",
         "keywordGroups": [{"groupName": keyword, "keywords": [keyword]}]
     }
 
@@ -172,6 +171,7 @@ def get_trend():
 
 # ─────────────────────────────────────────────
 # 기업 검색 통합 엔드포인트
+# 검색: 목록만 빠르게 반환 (임직원수 제외)
 # ─────────────────────────────────────────────
 @app.route("/api/company/search")
 def company_search():
@@ -198,7 +198,7 @@ def company_search():
 
 
 # ─────────────────────────────────────────────
-# DART 기업 상세
+# DART 기업 상세 (클릭 시 호출 - 임직원수 포함)
 # ─────────────────────────────────────────────
 @app.route("/api/company/dart/detail")
 def dart_detail():
@@ -227,7 +227,7 @@ def company_nts():
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: DART 회사 검색 (캐시 기반)
+# 헬퍼: DART 회사 검색 (캐시 기반, 임직원수 미포함)
 # ─────────────────────────────────────────────
 def _search_dart(keyword: str) -> list:
     try:
@@ -249,14 +249,12 @@ def _search_dart(keyword: str) -> list:
 
         results = []
         for c in matched[:15]:
-            emp = _fetch_dart_emp(c["corp_code"])
             results.append({
-                "corp_code":      c["corp_code"],
-                "corp_name":      c["corp_name"],
-                "stock_code":     c["stock_code"] or "-",
-                "corp_cls":       "-",   # 캐시에 corp_cls 없음, 상세 클릭 시 표시
-                "emp_count":      emp,
-                "source":         "DART"
+                "corp_code":  c["corp_code"],
+                "corp_name":  c["corp_name"],
+                "stock_code": c["stock_code"] or "-",
+                "corp_cls":   "-",
+                "source":     "DART"
             })
 
         print(f"[DART DEBUG] 검색결과: {len(results)}건")
@@ -268,46 +266,7 @@ def _search_dart(keyword: str) -> list:
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: DART 임직원수 (최근 3년 × 4개 보고서 순차 탐색)
-# ─────────────────────────────────────────────
-def _fetch_dart_emp(corp_code: str):
-    current_year = datetime.date.today().year
-    for year in range(current_year, current_year - 3, -1):
-        for report_code in REPORT_CODES:
-            try:
-                res = _dart_session.get(
-                    "https://opendart.fss.or.kr/api/empSttus.json",
-                    params={
-                        "crtfc_key":  DART_API_KEY,
-                        "corp_code":  corp_code,
-                        "bsns_year":  str(year),
-                        "reprt_code": report_code,
-                    },
-                    timeout=10, verify=False
-                )
-                res.raise_for_status()
-                data = res.json()
-                if data.get("status") not in ("000",):
-                    continue
-                emp_list = data.get("list", [])
-                if not emp_list:
-                    continue
-                total = 0
-                found = False
-                for row in emp_list:
-                    val = _to_int(row.get("sm", ""))
-                    if val > 0:
-                        total += val
-                        found = True
-                if found:
-                    return total
-            except Exception:
-                continue
-    return None
-
-
-# ─────────────────────────────────────────────
-# 헬퍼: DART 기업 기본정보
+# 헬퍼: DART 기업 기본정보 + 임직원수 (상세 클릭 시)
 # ─────────────────────────────────────────────
 def _fetch_dart_company_info(corp_code: str) -> dict:
     try:
@@ -339,6 +298,39 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
     except Exception as e:
         print(f"[DART INFO ERROR] {e}")
         return {}
+
+
+# ─────────────────────────────────────────────
+# 헬퍼: DART 임직원수 (전년도 사업보고서 1회만)
+# ─────────────────────────────────────────────
+def _fetch_dart_emp(corp_code: str):
+    year = str(datetime.date.today().year - 1)
+    try:
+        res = _dart_session.get(
+            "https://opendart.fss.or.kr/api/empSttus.json",
+            params={
+                "crtfc_key":  DART_API_KEY,
+                "corp_code":  corp_code,
+                "bsns_year":  year,
+                "reprt_code": "11011",
+            },
+            timeout=7, verify=False
+        )
+        res.raise_for_status()
+        data = res.json()
+        if data.get("status") != "000":
+            return None
+        total = 0
+        found = False
+        for row in data.get("list", []):
+            val = _to_int(row.get("sm", ""))
+            if val > 0:
+                total += val
+                found = True
+        return total if found else None
+    except Exception as e:
+        print(f"[DART EMP ERROR] {e}")
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -379,72 +371,45 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: NPS 사업장 검색
+# 헬퍼: NPS 사업장 검색 (기본 검색만, 상세 API 제거)
 # ─────────────────────────────────────────────
 def _search_nps(keyword: str) -> list:
     try:
-        basic_rows = _nps_basic_search(keyword)
-        companies  = []
+        res = _dart_session.get(
+            "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2",
+            params={
+                "serviceKey": NPS_API_KEY,
+                "wkplNm":     keyword,
+                "dataType":   "json",
+                "pageNo":     1,
+                "numOfRows":  10
+            },
+            timeout=20, verify=False
+        )
+        res.raise_for_status()
+        print(f"[NPS BASIC] status={res.status_code}, raw={res.text[:200]}")
 
-        for row in basic_rows:
-            seq = _to_int(row.get("seq", 0))
-            if seq == 0:
-                continue
-            detail = _nps_detail_search(seq)
-            company = {
-                "사업장명":       detail.get("wkplNm") or row.get("wkplNm", "-"),
+        rows = _nps_extract_items(res.json())
+
+        companies = []
+        for row in rows:
+            companies.append({
+                "사업장명":       row.get("wkplNm", "-"),
                 "사업자등록번호": row.get("bzowrRgstNo", "-"),
-                "가입자수":       _to_int(detail.get("jnngpCnt", 0)),
-                "주소":           detail.get("wkplRoadNmDtlAddr") or row.get("wkplRoadNmDtlAddr", "-"),
-                "업종":           detail.get("vldtVlKrnNm", "-"),
-                "seq":            seq,
+                "가입자수":       _to_int(row.get("totMnbscNpc", 0)),
+                "주소":           row.get("wkplRoadNmAddr", "-"),
+                "업종":           row.get("ndbizNm", "-"),
                 "source":         "NPS"
-            }
-            company["_rank"] = _nps_relevance_rank(keyword, company["사업장명"])
-            companies.append(company)
+            })
 
-        dedup = {}
-        for c in companies:
-            key = (c["사업장명"].strip().lower(), c["주소"].strip().lower())
-            if key not in dedup or c["seq"] > dedup[key]["seq"]:
-                dedup[key] = c
-
-        sorted_list = sorted(dedup.values(), key=lambda x: (x["_rank"], -x["가입자수"]))
-
-        return [{
-            "사업장명":       c["사업장명"],
-            "사업자등록번호": c["사업자등록번호"],
-            "가입자수":       c["가입자수"],
-            "주소":           c["주소"],
-            "업종":           c["업종"],
-            "source":         "NPS"
-        } for c in sorted_list]
+        # 관련도 정렬
+        kw = keyword.strip().lower()
+        companies.sort(key=lambda x: _nps_relevance_rank(kw, x["사업장명"]))
+        return companies
 
     except Exception as e:
         print(f"[NPS SEARCH ERROR] {e}")
         return []
-
-
-def _nps_basic_search(keyword: str) -> list:
-    res = _dart_session.get(
-        "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2",
-        params={"serviceKey": NPS_API_KEY, "wkplNm": keyword, "dataType": "json", "pageNo": 1, "numOfRows": 20},
-        timeout=20, verify=False
-    )
-    res.raise_for_status()
-    print(f"[NPS BASIC] status={res.status_code}, raw={res.text[:200]}")
-    return _nps_extract_items(res.json())
-
-
-def _nps_detail_search(seq: int) -> dict:
-    res = _dart_session.get(
-        "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getDetailInfoSearchV2",
-        params={"serviceKey": NPS_API_KEY, "seq": seq, "dataType": "json"},
-        timeout=20, verify=False
-    )
-    res.raise_for_status()
-    rows = _nps_extract_items(res.json())
-    return rows[0] if rows else {}
 
 
 def _nps_extract_items(payload: dict) -> list:
