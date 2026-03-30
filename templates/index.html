@@ -452,6 +452,7 @@ function openDartDetail(corp_code, corp_name) {
       // 기본 정보
       const infoFields = [
         ["대표자", data.ceo_nm],
+        ["임직원수", data.emp_count],   // ← 추가
         ["시장구분", data.corp_cls],
         ["종목코드", data.stock_code],
         ["업종코드", data.induty_code],
