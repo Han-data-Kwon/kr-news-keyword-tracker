@@ -235,7 +235,7 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
         d = res.json()
         if d.get("status") != "000":
             return {}
-        return {
+        result = {
             "corp_name":     d.get("corp_name"),
             "corp_name_eng": d.get("corp_name_eng", "-"),
             "stock_code":    d.get("stock_code") or "-",
@@ -251,10 +251,39 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
             "est_dt":        d.get("est_dt", "-"),
             "acc_mt":        d.get("acc_mt", "-"),
         }
+        # 임직원수 추가 조회
+        result["emp_count"] = _fetch_dart_emp(corp_code)
+        return result
     except Exception as e:
         print(f"[DART INFO ERROR] {e}")
         return {}
 
+
+def _fetch_dart_emp(corp_code: str) -> str:
+    url = "https://opendart.fss.or.kr/api/empSttus.json"
+    year = str(datetime.today().year - 1)
+    try:
+        res = _dart_session.get(url, params={
+            "crtfc_key":  DART_API_KEY,
+            "corp_code":  corp_code,
+            "bsns_year":  year,
+            "reprt_code": "11011"  # 사업보고서
+        }, timeout=7, verify=False)
+        res.raise_for_status()
+        data = res.json()
+        if data.get("status") != "000":
+            return "-"
+        total = 0
+        for item in data.get("list", []):
+            try:
+                cnt = item.get("reform_coexist_nmpr") or item.get("fo_bbm") or "0"
+                total += int(str(cnt).replace(",", ""))
+            except:
+                continue
+        return str(total) if total > 0 else "-"
+    except Exception as e:
+        print(f"[DART EMP ERROR] {e}")
+        return "-"
 
 # ─────────────────────────────────────────────
 # 헬퍼: DART 재무정보
@@ -303,19 +332,17 @@ def _search_nps(keyword: str) -> list:
             "dataType":   "json",
             "pageNo":     1,
             "numOfRows":  10
-        }, timeout=7, verify=False)
+        }, timeout=20, verify=False)
         res.raise_for_status()
         print(f"[NPS DEBUG] status_code={res.status_code}, raw={res.text[:300]}")
 
         data = res.json()
-        # 응답 구조: items.item[]
         items = data.get("items", {})
         if isinstance(items, dict):
             item_list = items.get("item", [])
         else:
             item_list = items
-
-        if isinstance(item_list, dict):  # 단건일 때 dict로 오는 경우
+        if isinstance(item_list, dict):
             item_list = [item_list]
 
         return [{
@@ -327,6 +354,9 @@ def _search_nps(keyword: str) -> list:
             "source":         "NPS"
         } for d in item_list]
 
+    except requests.exceptions.Timeout:
+        print(f"[NPS TIMEOUT] 응답 지연으로 조회 실패")
+        return []
     except Exception as e:
         print(f"[NPS SEARCH ERROR] {e}")
         return []
