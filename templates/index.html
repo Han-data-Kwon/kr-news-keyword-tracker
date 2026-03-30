@@ -144,8 +144,7 @@
       <table id="dart-table">
         <thead>
           <tr>
-            <th>회사명</th><th>시장</th><th>종목코드</th>
-            <th>임직원수</th><th>상세</th>
+            <th>회사명</th><th>시장</th><th>종목코드</th><th>상세</th>
           </tr>
         </thead>
         <tbody id="dart-tbody"></tbody>
@@ -421,8 +420,6 @@ function renderDartTable(list) {
       <td><strong>${c.corp_name}</strong></td>
       <td><span class="badge ${bc}">${cls}</span></td>
       <td>${c.stock_code || "-"}</td>
-      <td>${c.emp_count != null ? Number(c.emp_count).toLocaleString() + "명" : "-"}</td>
-      <td>${c.bizr_no   || "-"}</td>
       <td><button class="btn btn-outline btn-sm" onclick="openDartDetail('${c.corp_code}','${c.corp_name}')">상세</button></td>`;
     tbody.appendChild(row);
   });
