@@ -145,7 +145,7 @@
         <thead>
           <tr>
             <th>회사명</th><th>시장</th><th>종목코드</th>
-            <th>법인등록번호</th><th>사업자번호</th><th>상세</th>
+            <th>임직원수</th><th>상세</th>
           </tr>
         </thead>
         <tbody id="dart-tbody"></tbody>
@@ -208,6 +208,17 @@ function formatNumber(v) {
   return n.toLocaleString();
 }
 
+function formatPubDate(dateStr) {
+  if (!dateStr) return "-";
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr.substring(0, 16);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd} ${hh}:${mi}`;
+}
+ 
 function formatWon(v) {
   if (v === "-" || v == null || v === "") return "-";
   const n = Number(String(v).replace(/,/g, ""));
@@ -275,7 +286,7 @@ function searchNews(keyword = "", save = true) {
         rows += `<tr class="${hl}">
           <td><a href="${item.link}" target="_blank">${item.title}</a></td>
           <td style="white-space:nowrap;">${item.source.replace(/https?:\/\/(www\.)?/,"").split("/")[0]}</td>
-          <td style="white-space:nowrap;">${item.date.substring(0,16)}</td>
+          <td style="white-space:nowrap;">${formatPubDate(item.date)}</td>
           <td><span class="badge ${bc}">${bl}</span></td>
         </tr>`;
       });
@@ -410,7 +421,7 @@ function renderDartTable(list) {
       <td><strong>${c.corp_name}</strong></td>
       <td><span class="badge ${bc}">${cls}</span></td>
       <td>${c.stock_code || "-"}</td>
-      <td>${c.jurir_no  || "-"}</td>
+      <td>${c.emp_count != null ? Number(c.emp_count).toLocaleString() + "명" : "-"}</td>
       <td>${c.bizr_no   || "-"}</td>
       <td><button class="btn btn-outline btn-sm" onclick="openDartDetail('${c.corp_code}','${c.corp_name}')">상세</button></td>`;
     tbody.appendChild(row);
