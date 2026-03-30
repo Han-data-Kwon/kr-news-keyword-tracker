@@ -3,12 +3,15 @@ import json
 import ssl
 import io
 import zipfile
+import threading
+import time
 import xml.etree.ElementTree as ET
 import requests
 import urllib3
 import pandas as pd
+import datetime
 from flask import Flask, request, jsonify, render_template
-from datetime import datetime, timedelta
+from datetime import timedelta
 from flask_cors import CORS
 from requests.adapters import HTTPAdapter
 from urllib3.poolmanager import PoolManager
@@ -42,37 +45,55 @@ NTS_API_KEY         = os.getenv("NTS_API_KEY")
 NPS_API_KEY         = os.getenv("NPS_API_KEY", "6eb71aa2822504015095fc5fcab3fa15faabcd5e55f8d96a9fbe7edc0514cb73")
 DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
 
-# ─────────────────────────────────────────────
-# DART 기업 목록 캐시 (서버 시작 시 1회 로드)
-# ─────────────────────────────────────────────
-_dart_corp_list = []
+CORP_CODE_CACHE_SECONDS = 60 * 60 * 12  # 12시간
+REPORT_CODES = ["11011", "11014", "11012", "11013"]  # 사업/반기/1분기/3분기
 
-def _load_dart_corp_list():
-    global _dart_corp_list
-    url = "https://opendart.fss.or.kr/api/corpCode.xml"
+# ─────────────────────────────────────────────
+# DART 기업 목록 캐시 (12시간 자동 갱신)
+# ─────────────────────────────────────────────
+_corp_code_cache = {"fetched_at": 0.0, "companies": []}
+_corp_code_lock  = threading.Lock()
+
+def _get_corp_codes() -> list:
+    now = time.time()
+    with _corp_code_lock:
+        if _corp_code_cache["companies"] and now - _corp_code_cache["fetched_at"] < CORP_CODE_CACHE_SECONDS:
+            return _corp_code_cache["companies"]
+        companies = _download_corp_codes()
+        _corp_code_cache["companies"]  = companies
+        _corp_code_cache["fetched_at"] = now
+        return companies
+
+def _download_corp_codes() -> list:
     try:
-        print("[DART CACHE] 기업 목록 로딩 시작...")
-        res = _dart_session.get(url, params={"crtfc_key": DART_API_KEY}, timeout=30, verify=False)
+        print("[DART CACHE] 기업 목록 다운로드 시작...")
+        res = _dart_session.get(
+            "https://opendart.fss.or.kr/api/corpCode.xml",
+            params={"crtfc_key": DART_API_KEY},
+            timeout=30, verify=False
+        )
         res.raise_for_status()
         with zipfile.ZipFile(io.BytesIO(res.content)) as z:
-            with z.open(z.namelist()[0]) as f:
-                root = ET.parse(f).getroot()
-        _dart_corp_list = [
+            xml_name = next((n for n in z.namelist() if n.lower().endswith(".xml")), None)
+            with z.open(xml_name) as f:
+                root = ET.fromstring(f.read())
+        companies = [
             {
-                "corp_code":  item.findtext("corp_code", ""),
-                "corp_name":  item.findtext("corp_name", ""),
-                "stock_code": item.findtext("stock_code", "") or "-",
-                "corp_cls":   item.findtext("corp_cls", "")
+                "corp_code":  (item.find("corp_code").text  or "").strip(),
+                "corp_name":  (item.find("corp_name").text  or "").strip(),
+                "stock_code": (item.find("stock_code").text or "").strip(),
             }
             for item in root.findall("list")
         ]
-        print(f"[DART CACHE] 로딩 완료: {len(_dart_corp_list):,}개 기업")
+        print(f"[DART CACHE] 완료: {len(companies):,}개")
+        return companies
     except Exception as e:
         print(f"[DART CACHE ERROR] {e}")
+        return []
 
-# 서버 시작 시 1회 실행
+# 서버 시작 시 1회 선로딩
 with app.app_context():
-    _load_dart_corp_list()
+    _get_corp_codes()
 
 
 # ─────────────────────────────────────────────
@@ -104,9 +125,9 @@ def search_news():
         data = res.json().get("items", [])
         return jsonify([{
             "title": item.get("title", "").replace("<b>", "").replace("</b>", ""),
-            "link": item.get("link"),
+            "link":  item.get("link"),
             "source": item.get("originallink") or item.get("link"),
-            "date": item.get("pubDate", "")
+            "date":  item.get("pubDate", "")
         } for item in data])
     except Exception as e:
         print("NAVER 뉴스 API 오류:", e)
@@ -123,7 +144,7 @@ def get_trend():
     if not keyword:
         return jsonify({"error": "Missing keyword"}), 400
 
-    end_date   = datetime.today()
+    end_date   = datetime.datetime.today()
     start_date = end_date - timedelta(days=365 if period == "1y" else 30)
 
     url = "https://openapi.naver.com/v1/datalab/search"
@@ -173,10 +194,7 @@ def company_search():
         nps_results = _search_nps(keyword)
     print(f"[SEARCH] nps 완료: {len(nps_results)}건")
 
-    return jsonify({
-        "dart": dart_results,
-        "nps":  nps_results
-    })
+    return jsonify({"dart": dart_results, "nps": nps_results})
 
 
 # ─────────────────────────────────────────────
@@ -209,46 +227,100 @@ def company_nts():
 
 
 # ─────────────────────────────────────────────
-# 헬퍼: DART 회사 검색 (캐시 사용)
+# 헬퍼: DART 회사 검색 (캐시 기반)
 # ─────────────────────────────────────────────
 def _search_dart(keyword: str) -> list:
     try:
+        corp_list = _get_corp_codes()
+        kw = keyword.strip().lower()
+
+        matched = []
+        for c in corp_list:
+            name = c["corp_name"].lower()
+            if kw not in name:
+                continue
+            matched.append({
+                **c,
+                "relevance_rank": 0 if name == kw else (1 if name.startswith(kw) else 2),
+                "listed_rank":    0 if c["stock_code"] else 1,
+            })
+
+        matched.sort(key=lambda x: (x["relevance_rank"], x["listed_rank"], x["corp_name"].lower()))
+
         results = []
-        for item in _dart_corp_list:
-            if keyword.lower() in item["corp_name"].lower():
-                results.append({
-                    "corp_code":  item["corp_code"],
-                    "corp_name":  item["corp_name"],
-                    "stock_code": item["stock_code"],
-                    "corp_cls":   _corp_cls_label(item["corp_cls"]),
-                    "jurir_no":   "-",
-                    "bizr_no":    "-",
-                    "source":     "DART"
-                })
-            if len(results) >= 10:
-                break
+        for c in matched[:15]:
+            emp = _fetch_dart_emp(c["corp_code"])
+            results.append({
+                "corp_code":      c["corp_code"],
+                "corp_name":      c["corp_name"],
+                "stock_code":     c["stock_code"] or "-",
+                "corp_cls":       "-",   # 캐시에 corp_cls 없음, 상세 클릭 시 표시
+                "emp_count":      emp,
+                "source":         "DART"
+            })
+
         print(f"[DART DEBUG] 검색결과: {len(results)}건")
         return results
+
     except Exception as e:
         print(f"[DART SEARCH ERROR] {e}")
         return []
 
 
 # ─────────────────────────────────────────────
+# 헬퍼: DART 임직원수 (최근 3년 × 4개 보고서 순차 탐색)
+# ─────────────────────────────────────────────
+def _fetch_dart_emp(corp_code: str):
+    current_year = datetime.date.today().year
+    for year in range(current_year, current_year - 3, -1):
+        for report_code in REPORT_CODES:
+            try:
+                res = _dart_session.get(
+                    "https://opendart.fss.or.kr/api/empSttus.json",
+                    params={
+                        "crtfc_key":  DART_API_KEY,
+                        "corp_code":  corp_code,
+                        "bsns_year":  str(year),
+                        "reprt_code": report_code,
+                    },
+                    timeout=10, verify=False
+                )
+                res.raise_for_status()
+                data = res.json()
+                if data.get("status") not in ("000",):
+                    continue
+                emp_list = data.get("list", [])
+                if not emp_list:
+                    continue
+                total = 0
+                found = False
+                for row in emp_list:
+                    val = _to_int(row.get("sm", ""))
+                    if val > 0:
+                        total += val
+                        found = True
+                if found:
+                    return total
+            except Exception:
+                continue
+    return None
+
+
+# ─────────────────────────────────────────────
 # 헬퍼: DART 기업 기본정보
 # ─────────────────────────────────────────────
 def _fetch_dart_company_info(corp_code: str) -> dict:
-    url = "https://opendart.fss.or.kr/api/company.json"
     try:
-        res = _dart_session.get(url, params={
-            "crtfc_key": DART_API_KEY,
-            "corp_code": corp_code
-        }, timeout=7, verify=False)
+        res = _dart_session.get(
+            "https://opendart.fss.or.kr/api/company.json",
+            params={"crtfc_key": DART_API_KEY, "corp_code": corp_code},
+            timeout=7, verify=False
+        )
         res.raise_for_status()
         d = res.json()
         if d.get("status") != "000":
             return {}
-        result = {
+        return {
             "corp_name":     d.get("corp_name"),
             "corp_name_eng": d.get("corp_name_eng", "-"),
             "stock_code":    d.get("stock_code") or "-",
@@ -258,60 +330,34 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
             "bizr_no":       d.get("bizr_no", "-"),
             "adres":         d.get("adres", "-"),
             "hm_url":        d.get("hm_url", "-"),
-            "ir_url":        d.get("ir_url", "-"),
             "phn_no":        d.get("phn_no", "-"),
             "induty_code":   d.get("induty_code", "-"),
             "est_dt":        d.get("est_dt", "-"),
             "acc_mt":        d.get("acc_mt", "-"),
+            "emp_count":     _fetch_dart_emp(corp_code),
         }
-        result["emp_count"] = _fetch_dart_emp(corp_code)
-        return result
     except Exception as e:
         print(f"[DART INFO ERROR] {e}")
         return {}
-
-
-def _fetch_dart_emp(corp_code: str) -> str:
-    url = "https://opendart.fss.or.kr/api/empSttus.json"
-    year = str(datetime.today().year - 1)
-    try:
-        res = _dart_session.get(url, params={
-            "crtfc_key":  DART_API_KEY,
-            "corp_code":  corp_code,
-            "bsns_year":  year,
-            "reprt_code": "11011"
-        }, timeout=7, verify=False)
-        res.raise_for_status()
-        data = res.json()
-        if data.get("status") != "000":
-            return "-"
-        total = 0
-        for item in data.get("list", []):
-            try:
-                cnt = item.get("reform_coexist_nmpr") or item.get("fo_bbm") or "0"
-                total += int(str(cnt).replace(",", ""))
-            except:
-                continue
-        return str(total) if total > 0 else "-"
-    except Exception as e:
-        print(f"[DART EMP ERROR] {e}")
-        return "-"
 
 
 # ─────────────────────────────────────────────
 # 헬퍼: DART 재무정보
 # ─────────────────────────────────────────────
 def _fetch_dart_finance(corp_code: str) -> dict:
-    url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
-    year = str(datetime.today().year - 1)
+    year = str(datetime.date.today().year - 1)
     try:
-        res = _dart_session.get(url, params={
-            "crtfc_key":  DART_API_KEY,
-            "corp_code":  corp_code,
-            "bsns_year":  year,
-            "reprt_code": "11011",
-            "fs_div":     "CFS"
-        }, timeout=10, verify=False)
+        res = _dart_session.get(
+            "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json",
+            params={
+                "crtfc_key":  DART_API_KEY,
+                "corp_code":  corp_code,
+                "bsns_year":  year,
+                "reprt_code": "11011",
+                "fs_div":     "CFS"
+            },
+            timeout=10, verify=False
+        )
         res.raise_for_status()
         data = res.json()
         if data.get("status") != "000":
@@ -325,7 +371,6 @@ def _fetch_dart_finance(corp_code: str) -> dict:
                     "항목": item.get("account_nm"),
                     "당기": item.get("thstrm_amount", "-"),
                     "전기": item.get("frmtrm_amount", "-"),
-                    "단위": "원"
                 })
         return {"finance": rows, "finance_year": year}
     except Exception as e:
@@ -339,18 +384,17 @@ def _fetch_dart_finance(corp_code: str) -> dict:
 def _search_nps(keyword: str) -> list:
     try:
         basic_rows = _nps_basic_search(keyword)
-        companies = []
+        companies  = []
 
         for row in basic_rows:
-            seq = _nps_to_int(row.get("seq", 0))
+            seq = _to_int(row.get("seq", 0))
             if seq == 0:
                 continue
-
             detail = _nps_detail_search(seq)
             company = {
                 "사업장명":       detail.get("wkplNm") or row.get("wkplNm", "-"),
                 "사업자등록번호": row.get("bzowrRgstNo", "-"),
-                "가입자수":       _nps_to_int(detail.get("jnngpCnt", 0)),
+                "가입자수":       _to_int(detail.get("jnngpCnt", 0)),
                 "주소":           detail.get("wkplRoadNmDtlAddr") or row.get("wkplRoadNmDtlAddr", "-"),
                 "업종":           detail.get("vldtVlKrnNm", "-"),
                 "seq":            seq,
@@ -382,26 +426,22 @@ def _search_nps(keyword: str) -> list:
 
 
 def _nps_basic_search(keyword: str) -> list:
-    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2"
-    res = _dart_session.get(url, params={
-        "serviceKey": NPS_API_KEY,
-        "wkplNm":     keyword,
-        "dataType":   "json",
-        "pageNo":     1,
-        "numOfRows":  20
-    }, timeout=20, verify=False)
+    res = _dart_session.get(
+        "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2",
+        params={"serviceKey": NPS_API_KEY, "wkplNm": keyword, "dataType": "json", "pageNo": 1, "numOfRows": 20},
+        timeout=20, verify=False
+    )
     res.raise_for_status()
     print(f"[NPS BASIC] status={res.status_code}, raw={res.text[:200]}")
     return _nps_extract_items(res.json())
 
 
 def _nps_detail_search(seq: int) -> dict:
-    url = "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getDetailInfoSearchV2"
-    res = _dart_session.get(url, params={
-        "serviceKey": NPS_API_KEY,
-        "seq":        seq,
-        "dataType":   "json"
-    }, timeout=20, verify=False)
+    res = _dart_session.get(
+        "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getDetailInfoSearchV2",
+        params={"serviceKey": NPS_API_KEY, "seq": seq, "dataType": "json"},
+        timeout=20, verify=False
+    )
     res.raise_for_status()
     rows = _nps_extract_items(res.json())
     return rows[0] if rows else {}
@@ -414,16 +454,8 @@ def _nps_extract_items(payload: dict) -> list:
     return rows if isinstance(rows, list) else []
 
 
-def _nps_to_int(value) -> int:
-    try:
-        return int(str(value).replace(",", ""))
-    except (TypeError, ValueError):
-        return 0
-
-
 def _nps_relevance_rank(keyword: str, name: str) -> int:
-    kw = keyword.strip().lower()
-    nm = name.strip().lower()
+    kw, nm = keyword.strip().lower(), name.strip().lower()
     if nm == kw:          return 0
     if nm.startswith(kw): return 1
     return 2
@@ -450,6 +482,13 @@ def _fetch_nts(b_no: str) -> dict:
 
 def _corp_cls_label(cls: str) -> str:
     return {"Y": "유가증권(KOSPI)", "K": "코스닥(KOSDAQ)", "N": "코넥스", "E": "기타(비상장)"}.get(cls or "", cls or "-")
+
+
+def _to_int(value) -> int:
+    try:
+        return int(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0
 
 
 if __name__ == "__main__":
