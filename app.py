@@ -41,8 +41,6 @@ CORS(app)
 
 NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-NTS_API_KEY         = os.getenv("NTS_API_KEY")
-NPS_API_KEY         = os.getenv("NPS_API_KEY", "6eb71aa2822504015095fc5fcab3fa15faabcd5e55f8d96a9fbe7edc0514cb73")
 DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
 
 CORP_CODE_CACHE_SECONDS = 60 * 60 * 12
@@ -184,17 +182,12 @@ def company_search():
         return jsonify({"error": "검색어를 입력해주세요."}), 400
 
     dart_results = []
-    nps_results  = []
 
     if search_type in ("all", "dart"):
         dart_results = _search_dart(keyword)
     print(f"[SEARCH] dart 완료: {len(dart_results)}건")
 
-    if search_type in ("all", "nps"):
-        nps_results = _search_nps(keyword)
-    print(f"[SEARCH] nps 완료: {len(nps_results)}건")
-
-    return jsonify({"dart": dart_results, "nps": nps_results})
+    return jsonify({"dart": dart_results, "nps": []})
 
 
 # ─────────────────────────────────────────────
@@ -210,20 +203,6 @@ def dart_detail():
     finance = _fetch_dart_finance(corp_code)
 
     return jsonify({**info, **finance})
-
-
-# ─────────────────────────────────────────────
-# NTS 사업자 상태 조회
-# ─────────────────────────────────────────────
-@app.route("/api/company/nts")
-def company_nts():
-    b_no_raw = request.args.get("b_no", "").strip()
-    b_no     = b_no_raw.replace("-", "").zfill(10)
-
-    if not b_no.isdigit() or len(b_no) != 10:
-        return jsonify({"error": "사업자등록번호 형식 오류 (10자리)"}), 400
-
-    return jsonify(_fetch_nts(b_no))
 
 
 # ─────────────────────────────────────────────
@@ -368,92 +347,6 @@ def _fetch_dart_finance(corp_code: str) -> dict:
     except Exception as e:
         print(f"[DART FINANCE ERROR] {e}")
         return {"finance": [], "finance_year": year}
-
-
-# ─────────────────────────────────────────────
-# 헬퍼: NPS 사업장 검색 (기본 검색만, 상세 API 제거)
-# ─────────────────────────────────────────────
-def _search_nps(keyword: str) -> list:
-    try:
-        res = _dart_session.get(
-            "https://apis.data.go.kr/B552015/NpsBplcInfoInqireServiceV2/getBassInfoSearchV2",
-            params={
-                "serviceKey": NPS_API_KEY,
-                "wkplNm":     keyword,
-                "dataType":   "json",
-                "pageNo":     1,
-                "numOfRows":  10
-            },
-            timeout=20, verify=False
-        )
-        res.raise_for_status()
-        print(f"[NPS BASIC] status={res.status_code}, raw={res.text[:200]}")
-
-        rows = _nps_extract_items(res.json())
-
-        companies = []
-        for row in rows:
-            companies.append({
-                "사업장명":       row.get("wkplNm", "-"),
-                "사업자등록번호": row.get("bzowrRgstNo", "-"),
-                "가입자수":       _to_int(row.get("totMnbscNpc", 0)),
-                "주소":           row.get("wkplRoadNmAddr", "-"),
-                "업종":           row.get("ndbizNm", "-"),
-                "source":         "NPS"
-            })
-
-        # 관련도 정렬
-        kw = keyword.strip().lower()
-        companies.sort(key=lambda x: _nps_relevance_rank(kw, x["사업장명"]))
-        return companies
-
-    except Exception as e:
-        print(f"[NPS SEARCH ERROR] {e}")
-        return []
-
-
-def _nps_extract_items(payload: dict) -> list:
-    rows = payload.get("response", {}).get("body", {}).get("items", {}).get("item", [])
-    if isinstance(rows, dict):
-        return [rows]
-    return rows if isinstance(rows, list) else []
-
-
-def _nps_relevance_rank(keyword: str, name: str) -> int:
-    kw, nm = keyword.strip().lower(), name.strip().lower()
-    if nm == kw:          return 0
-    if nm.startswith(kw): return 1
-    return 2
-
-
-# ─────────────────────────────────────────────
-# 헬퍼: NTS 사업자 상태 단건
-# ─────────────────────────────────────────────
-def _fetch_nts(b_no: str) -> dict:
-    if not NTS_API_KEY:
-        return {"error": "NTS_API_KEY 미설정"}
-    url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
-    try:
-        res = _dart_session.post(url,
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
-            json={"b_no": [b_no]}, timeout=5, verify=False)
-        res.raise_for_status()
-        data = res.json().get("data", [])
-        return data[0] if data else {}
-    except Exception as e:
-        print(f"[NTS ERROR] {e}")
-        return {}
-
-
-def _corp_cls_label(cls: str) -> str:
-    return {"Y": "유가증권(KOSPI)", "K": "코스닥(KOSDAQ)", "N": "코넥스", "E": "기타(비상장)"}.get(cls or "", cls or "-")
-
-
-def _to_int(value) -> int:
-    try:
-        return int(str(value).replace(",", ""))
-    except (TypeError, ValueError):
-        return 0
 
 
 if __name__ == "__main__":
