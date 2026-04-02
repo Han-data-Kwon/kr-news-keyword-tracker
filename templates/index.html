@@ -50,11 +50,9 @@
     tr:hover td { background: #fafafa; }
 
     .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
-    .badge-pos { background: #e8f5e9; color: #2e7d32; }
-    .badge-neg { background: #ffebee; color: #c62828; }
-    .badge-neu { background: #f5f5f5; color: #616161; }
-    .badge-dart { background: #e3f2fd; color: #1565c0; }
-    .badge-nps  { background: #f3e5f5; color: #6a1b9a; }
+    .badge-pos   { background: #e8f5e9; color: #2e7d32; }
+    .badge-neg   { background: #ffebee; color: #c62828; }
+    .badge-neu   { background: #f5f5f5; color: #616161; }
     .badge-kospi  { background: #e8f5e9; color: #2e7d32; }
     .badge-kosdaq { background: #fff8e1; color: #f57f17; }
     .badge-etc    { background: #f5f5f5; color: #616161; }
@@ -64,18 +62,9 @@
     .trend-header h4 { font-size: 14px; }
     canvas { width: 100% !important; height: 180px !important; max-height: 200px; }
 
-    /* 기업 결과 패널 */
     .company-result-area { display: none; }
     .company-result-area.show { display: block; }
 
-    .result-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-    .result-tab { padding: 6px 16px; border: 1px solid var(--border); border-radius: 16px; cursor: pointer; font-size: 13px; background: #fff; }
-    .result-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
-
-    .result-panel { display: none; }
-    .result-panel.active { display: block; }
-
-    /* 상세 모달 */
     .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 100; justify-content: center; align-items: center; }
     .modal-overlay.show { display: flex; }
     .modal { background: #fff; border-radius: 12px; padding: 24px; width: 90%; max-width: 640px; max-height: 80vh; overflow-y: auto; position: relative; }
@@ -109,7 +98,7 @@
   <button class="tab-button" onclick="switchTab('company-section', this)">🏢 기업 정보 검색</button>
 </div>
 
-<!-- ══ 뉴스 검색 ══ -->
+<!-- 뉴스 검색 탭 -->
 <div id="news-section" class="section active">
   <div class="tab-bar" id="favorite-tabs"></div>
   <div class="search-bar">
@@ -120,37 +109,35 @@
   <div id="trend-charts"></div>
 </div>
 
-<!-- ══ 기업 정보 검색 ══ -->
+<!-- 기업 정보 검색 탭 -->
 <div id="company-section" class="section">
   <div class="search-bar">
-    <input type="text" id="companyKeyword" placeholder="기업명 검색 (예: 삼성전자, 카카오)" onkeydown="if(event.key==='Enter') searchCompany()" />
+    <input type="text" id="companyKeyword" placeholder="기업명 검색 (예: 삼성전자, 카카오, 여기어때)" onkeydown="if(event.key==='Enter') searchCompany()" />
     <button class="btn btn-primary" onclick="searchCompany()">검색</button>
     <button class="btn btn-outline" onclick="downloadCompanyCSV()">⬇ CSV</button>
   </div>
-  <p class="input-hint">
-    💡 <strong>DART</strong>(상장사 · 금감원) + <strong>NPS</strong>(일반 사업장 · 국민연금공단) 동시 검색
-  </p>
+  <p class="input-hint">💡 <strong>DART</strong>(금융감독원) 기반 기업 검색 · 상장사 및 비상장 법인 포함</p>
 
   <div id="company-loading" class="loading"><span class="spinner"></span>조회 중...</div>
 
   <div id="company-result-area" class="company-result-area">
-    <div class="result-tabs">
-      <button class="result-tab active" onclick="switchResultTab('dart-panel', this)">📈 상장사 (DART)</button>
-    </div>
-
-    <!-- DART 결과 -->
-    <div id="dart-panel" class="result-panel active card">
-      <table id="dart-table">
+    <div class="card">
+      <table>
         <thead>
           <tr>
-            <th>회사명</th><th>시장</th><th>종목코드</th><th>상세</th>
+            <th>회사명</th>
+            <th>시장</th>
+            <th>종목코드</th>
+            <th>상세</th>
           </tr>
         </thead>
         <tbody id="dart-tbody"></tbody>
       </table>
     </div>
+  </div>
+</div>
 
-<!-- ══ DART 상세 모달 ══ -->
+<!-- DART 상세 모달 -->
 <div class="modal-overlay" id="dart-modal">
   <div class="modal">
     <button class="close-modal" onclick="closeModal()">✕</button>
@@ -163,12 +150,14 @@
       <thead><tr><th>항목</th><th>당기</th><th>전기</th></tr></thead>
       <tbody id="modal-finance-tbody"></tbody>
     </table>
-    <p id="modal-finance-empty" style="display:none; font-size:13px; color:#888;">재무정보를 불러올 수 없습니다.</p>
+    <p id="modal-finance-empty" style="display:none; font-size:13px; color:#888; padding:12px 0;">재무정보를 불러올 수 없습니다.</p>
   </div>
 </div>
 
 <script>
-/* ════════════════════════ 공통 ════════════════════════ */
+/* ═══════════════════════════════════════
+   공통
+═══════════════════════════════════════ */
 function switchTab(id, button) {
   document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
   document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
@@ -184,6 +173,15 @@ function formatNumber(v) {
   return n.toLocaleString();
 }
 
+function formatWon(v) {
+  if (v === "-" || v == null || v === "") return "-";
+  const n = Number(String(v).replace(/,/g, ""));
+  if (isNaN(n)) return v;
+  if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(1) + "조원";
+  if (Math.abs(n) >= 1e8)  return (n / 1e8).toFixed(0)  + "억원";
+  return n.toLocaleString() + "원";
+}
+
 function formatPubDate(dateStr) {
   if (!dateStr) return "-";
   const d = new Date(dateStr);
@@ -193,15 +191,6 @@ function formatPubDate(dateStr) {
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd} ${hh}:${mi}`;
-}
- 
-function formatWon(v) {
-  if (v === "-" || v == null || v === "") return "-";
-  const n = Number(String(v).replace(/,/g, ""));
-  if (isNaN(n)) return v;
-  if (Math.abs(n) >= 1e12) return (n / 1e12).toFixed(1) + "조원";
-  if (Math.abs(n) >= 1e8)  return (n / 1e8).toFixed(0) + "억원";
-  return n.toLocaleString() + "원";
 }
 
 window.onload = () => {
@@ -214,7 +203,9 @@ window.onload = () => {
 
 setInterval(() => getSortedTopKeywords().forEach(k => refreshNews(k)), 10 * 60 * 1000);
 
-/* ════════════════════════ 뉴스 ════════════════════════ */
+/* ═══════════════════════════════════════
+   뉴스 검색
+═══════════════════════════════════════ */
 const positiveWords = ["급등","호재","성장","기대","회복","반등","돌파","상승","강세","개선","확대","유망","안정","기록","신기록","최고","인하","완화","도입","승인"];
 const negativeWords = ["하락","폭락","급락","추락","붕괴","우려","불안","침체","위기","적자","악재","둔화","패배","실패","감소","하회","경고","연기","위협","타격"];
 
@@ -241,7 +232,8 @@ function searchNews(keyword = "", save = true) {
       if (!data.length) return alert("뉴스 결과가 없습니다.");
       const hash = data.map(d => d.link).join(",");
       const prevLinks = lastLinks[keyword] || [];
-      if (hash !== lastHashes[keyword] && lastHashes[keyword] && document.getElementById('news-section').classList.contains('active'))
+      if (hash !== lastHashes[keyword] && lastHashes[keyword] &&
+          document.getElementById('news-section').classList.contains('active'))
         alert(`"${keyword}"의 새 뉴스가 업데이트되었습니다.`);
       lastHashes[keyword] = hash;
       lastLinks[keyword]  = data.map(d => d.link);
@@ -255,13 +247,14 @@ function searchNews(keyword = "", save = true) {
 
       let rows = "";
       data.forEach(item => {
-        const s = analyzeSentiment(item.title);
+        const s  = analyzeSentiment(item.title);
         const bc = s === "pos" ? "badge-pos" : s === "neg" ? "badge-neg" : "badge-neu";
-        const bl = s === "pos" ? "▲ 긍정" : s === "neg" ? "▼ 부정" : "● 중립";
+        const bl = s === "pos" ? "▲ 긍정"    : s === "neg" ? "▼ 부정"    : "● 중립";
         const hl = !prevLinks.includes(item.link) ? "highlight" : "";
+        const src = (item.source || "").replace(/https?:\/\/(www\.)?/, "").split("/")[0];
         rows += `<tr class="${hl}">
           <td><a href="${item.link}" target="_blank">${item.title}</a></td>
-          <td style="white-space:nowrap;">${item.source.replace(/https?:\/\/(www\.)?/,"").split("/")[0]}</td>
+          <td style="white-space:nowrap;">${src}</td>
           <td style="white-space:nowrap;">${formatPubDate(item.date)}</td>
           <td><span class="badge ${bc}">${bl}</span></td>
         </tr>`;
@@ -278,8 +271,12 @@ function searchNews(keyword = "", save = true) {
         const fqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
         fqs[keyword] = (fqs[keyword] || 0) + 1;
         localStorage.setItem(keywordFreqKey, JSON.stringify(fqs));
-        if (!kws.includes(keyword)) { kws.push(keyword); localStorage.setItem(savedKeywordsKey, JSON.stringify(kws)); }
-        renderTabs(); renderTrendChart(keyword);
+        if (!kws.includes(keyword)) {
+          kws.push(keyword);
+          localStorage.setItem(savedKeywordsKey, JSON.stringify(kws));
+        }
+        renderTabs();
+        renderTrendChart(keyword);
       }
     })
     .catch(err => alert(err.status === 403 || err.status === 429 ? "검색량 제한 도달" : "뉴스 검색 실패"));
@@ -291,7 +288,8 @@ function refreshNews(keyword) {
     const hash = data.map(d => d.link).join(",");
     if (hash !== lastHashes[keyword] && document.getElementById('news-section').classList.contains('active'))
       alert(`"${keyword}"의 새 뉴스가 감지되었습니다.`);
-    lastHashes[keyword] = hash; lastLinks[keyword] = data.map(d => d.link);
+    lastHashes[keyword] = hash;
+    lastLinks[keyword]  = data.map(d => d.link);
     const div = document.getElementById("table-" + keyword);
     if (div) { div.remove(); tableCount--; }
     searchNews(keyword, false);
@@ -309,7 +307,8 @@ function removeKeywordCompletely(keyword) {
   const kws = JSON.parse(localStorage.getItem(savedKeywordsKey) || "[]").filter(k => k !== keyword);
   localStorage.setItem(savedKeywordsKey, JSON.stringify(kws));
   const fqs = JSON.parse(localStorage.getItem(keywordFreqKey) || "{}");
-  delete fqs[keyword]; localStorage.setItem(keywordFreqKey, JSON.stringify(fqs));
+  delete fqs[keyword];
+  localStorage.setItem(keywordFreqKey, JSON.stringify(fqs));
   renderTabs();
 }
 
@@ -317,7 +316,8 @@ function renderTabs() {
   const container = document.getElementById("favorite-tabs");
   container.innerHTML = "";
   getSortedTopKeywords().forEach(k => {
-    const tag = document.createElement("div"); tag.className = "fav-tag";
+    const tag = document.createElement("div");
+    tag.className = "fav-tag";
     tag.innerHTML = `<span onclick="searchNews('${k}',false);renderTrendChart('${k}')">${k}</span>
       <button class="close" onclick="event.stopPropagation();removeKeywordCompletely('${k}')">×</button>`;
     container.appendChild(tag);
@@ -337,31 +337,49 @@ function renderTrendChart(keyword, period = "30d") {
     if (container) {
       container.querySelector("h4").innerText = `${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})`;
       canvas = container.querySelector("canvas");
-      const nc = canvas.cloneNode(true); canvas.parentNode.replaceChild(nc, canvas); canvas = nc;
+      const nc = canvas.cloneNode(true);
+      canvas.parentNode.replaceChild(nc, canvas);
+      canvas = nc;
     } else {
-      container = document.createElement("div"); container.className = "trend-container"; container.id = "trend-" + keyword;
+      container = document.createElement("div");
+      container.className = "trend-container";
+      container.id = "trend-" + keyword;
       container.innerHTML = `<div class="trend-header">
         <h4>${keyword} 검색 트렌드 (${period === "1y" ? "1년" : "30일"})</h4>
-        <div><button class="btn btn-outline btn-sm" onclick="renderTrendChart('${keyword}','30d')">30일</button>
-             <button class="btn btn-outline btn-sm" onclick="renderTrendChart('${keyword}','1y')">1년</button></div></div>`;
-      canvas = document.createElement("canvas"); canvas.id = "chart-" + keyword;
-      container.appendChild(canvas); document.getElementById("trend-charts").appendChild(container);
+        <div>
+          <button class="btn btn-outline btn-sm" onclick="renderTrendChart('${keyword}','30d')">30일</button>
+          <button class="btn btn-outline btn-sm" onclick="renderTrendChart('${keyword}','1y')">1년</button>
+        </div></div>`;
+      canvas = document.createElement("canvas");
+      canvas.id = "chart-" + keyword;
+      container.appendChild(canvas);
+      document.getElementById("trend-charts").appendChild(container);
     }
     new Chart(canvas.getContext("2d"), {
       type: "line",
-      data: { labels: data.map(d => d.date), datasets: [{
-        label: keyword, data: data.map(d => d.ratio),
-        borderColor: "rgba(66,133,244,1)", backgroundColor: "rgba(66,133,244,0.08)",
-        fill: true, tension: 0.3, pointRadius: 2
-      }]},
-      options: { scales: { x: { ticks: { maxTicksLimit: 6 } }, y: { beginAtZero: true } },
-        plugins: { legend: { display: false } }, interaction: { mode: 'index', intersect: false },
-        responsive: true, maintainAspectRatio: false }
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [{
+          label: keyword,
+          data: data.map(d => d.ratio),
+          borderColor: "rgba(66,133,244,1)",
+          backgroundColor: "rgba(66,133,244,0.08)",
+          fill: true, tension: 0.3, pointRadius: 2
+        }]
+      },
+      options: {
+        scales: { x: { ticks: { maxTicksLimit: 6 } }, y: { beginAtZero: true } },
+        plugins: { legend: { display: false } },
+        interaction: { mode: 'index', intersect: false },
+        responsive: true, maintainAspectRatio: false
+      }
     });
   });
 }
 
-/* ════════════════════════ 기업 검색 ════════════════════════ */
+/* ═══════════════════════════════════════
+   기업 정보 검색 (DART)
+═══════════════════════════════════════ */
 function searchCompany() {
   const keyword = document.getElementById("companyKeyword").value.trim();
   if (!keyword) return alert("기업명을 입력해주세요.");
@@ -371,37 +389,40 @@ function searchCompany() {
   loading.classList.add("show");
   area.classList.remove("show");
 
-  fetch(`/api/company/search?q=${encodeURIComponent(keyword)}&type=all`)
+  fetch(`/api/company/search?q=${encodeURIComponent(keyword)}`)
     .then(r => r.json())
     .then(data => {
       loading.classList.remove("show");
       area.classList.add("show");
       renderDartTable(data.dart || []);
     })
-    .catch(() => { loading.classList.remove("show"); alert("서버 오류가 발생했습니다."); });
+    .catch(() => {
+      loading.classList.remove("show");
+      alert("서버 오류가 발생했습니다.");
+    });
 }
 
 function renderDartTable(list) {
   const tbody = document.getElementById("dart-tbody");
   tbody.innerHTML = "";
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-msg">DART 검색 결과가 없습니다.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="empty-msg">검색 결과가 없습니다.</td></tr>`;
     return;
   }
   list.forEach(c => {
-    const cls = c.corp_cls || "";
-    const bc  = cls.includes("KOSPI") ? "badge-kospi" : cls.includes("KOSDAQ") ? "badge-kosdaq" : "badge-etc";
+    const cls = c.stock_code && c.stock_code !== "-" ? "KOSPI/KOSDAQ" : "비상장";
+    const bc  = cls === "비상장" ? "badge-etc" : "badge-kospi";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><strong>${c.corp_name}</strong></td>
       <td><span class="badge ${bc}">${cls}</span></td>
       <td>${c.stock_code || "-"}</td>
-      <td><button class="btn btn-outline btn-sm" onclick="openDartDetail('${c.corp_code}','${c.corp_name}')">상세</button></td>`;
+      <td><button class="btn btn-outline btn-sm"
+        onclick="openDartDetail('${c.corp_code}','${c.corp_name.replace(/'/g, "\\'")}')">상세</button></td>`;
     tbody.appendChild(row);
   });
 }
 
-/* ── DART 상세 모달 ── */
 function openDartDetail(corp_code, corp_name) {
   document.getElementById("modal-corp-name").innerText = corp_name;
   document.getElementById("modal-info-grid").innerHTML = "";
@@ -414,32 +435,35 @@ function openDartDetail(corp_code, corp_name) {
   fetch(`/api/company/dart/detail?corp_code=${corp_code}`)
     .then(r => r.json())
     .then(data => {
-      // 기본 정보
       const infoFields = [
-        ["대표자", data.ceo_nm],
-        ["임직원수", data.emp_count],   // ← 추가
-        ["시장구분", data.corp_cls],
-        ["종목코드", data.stock_code],
-        ["업종코드", data.induty_code],
-        ["설립일",  data.est_dt],
-        ["결산월",  data.acc_mt ? data.acc_mt + "월" : "-"],
-        ["대표전화", data.phn_no],
-        ["홈페이지", data.hm_url !== "-" ? `<a href="${data.hm_url}" target="_blank">${data.hm_url}</a>` : "-"],
-        ["주소",    data.adres],
-        ["사업자번호", data.bizr_no],
+        ["대표자",    data.ceo_nm      || "-"],
+        ["임직원수",  data.emp_count != null ? Number(data.emp_count).toLocaleString() + "명" : "-"],
+        ["시장구분",  data.corp_cls    || "-"],
+        ["종목코드",  data.stock_code  || "-"],
+        ["업종코드",  data.induty_code || "-"],
+        ["설립일",    data.est_dt      || "-"],
+        ["결산월",    data.acc_mt      ? data.acc_mt + "월" : "-"],
+        ["대표전화",  data.phn_no      || "-"],
+        ["홈페이지",  data.hm_url && data.hm_url !== "-"
+          ? `<a href="${data.hm_url}" target="_blank">${data.hm_url}</a>` : "-"],
+        ["주소",      data.adres       || "-"],
+        ["사업자번호", data.bizr_no    || "-"],
       ];
+
       document.getElementById("modal-info-grid").innerHTML =
         infoFields.map(([label, val]) =>
-          `<div class="info-item"><label>${label}</label><span>${val || "-"}</span></div>`).join("");
+          `<div class="info-item"><label>${label}</label><span>${val}</span></div>`
+        ).join("");
 
-      // 재무 정보
       document.getElementById("modal-finance-loading").classList.remove("show");
-      document.getElementById("modal-finance-year").innerText = data.finance_year ? `(${data.finance_year}년 기준)` : "";
+      document.getElementById("modal-finance-year").innerText =
+        data.finance_year ? `(${data.finance_year}년 기준)` : "";
 
       if (data.finance && data.finance.length) {
-        const rows = data.finance.map(f =>
-          `<tr><td>${f["항목"]}</td><td>${formatWon(f["당기"])}</td><td>${formatWon(f["전기"])}</td></tr>`).join("");
-        document.getElementById("modal-finance-tbody").innerHTML = rows;
+        document.getElementById("modal-finance-tbody").innerHTML =
+          data.finance.map(f =>
+            `<tr><td>${f["항목"]}</td><td>${formatWon(f["당기"])}</td><td>${formatWon(f["전기"])}</td></tr>`
+          ).join("");
         document.getElementById("modal-finance-table").style.display = "table";
       } else {
         document.getElementById("modal-finance-empty").style.display = "block";
@@ -458,24 +482,22 @@ document.getElementById("dart-modal").addEventListener("click", e => {
   if (e.target === document.getElementById("dart-modal")) closeModal();
 });
 
-/* ── CSV 다운로드 ── */
 function downloadCompanyCSV() {
-  const dartRows = [...document.querySelectorAll("#dart-tbody tr")].map(r =>
-    [...r.querySelectorAll("td")].slice(0,5).map(td => `"${td.innerText.replace(/"/g,'""')}"`).join(",")).filter(Boolean);
-  const npsRows  = [...document.querySelectorAll("#nps-tbody tr")].map(r =>
-    [...r.querySelectorAll("td")].map(td => `"${td.innerText.replace(/"/g,'""')}"`).join(",")).filter(Boolean);
+  const rows = [...document.querySelectorAll("#dart-tbody tr")].map(r =>
+    [...r.querySelectorAll("td")].slice(0, 3)
+      .map(td => `"${td.innerText.replace(/"/g, '""')}"`).join(",")
+  ).filter(Boolean);
 
-  if (!dartRows.length && !npsRows.length) return alert("다운로드할 데이터가 없습니다.");
+  if (!rows.length) return alert("다운로드할 데이터가 없습니다.");
 
-  let csv = "=== DART 상장사 ===\n회사명,시장,종목코드,법인등록번호,사업자번호\n";
-  csv += dartRows.join("\n") + "\n\n=== NPS 일반 사업장 ===\n사업장명,업종,가입자수,사업자등록번호,주소\n";
-  csv += npsRows.join("\n");
-
+  const csv = "회사명,시장,종목코드\n" + rows.join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `기업정보_${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  link.download = `기업정보_${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 </script>
 </body>
