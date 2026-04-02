@@ -41,14 +41,11 @@ CORS(app)
 
 NAVER_CLIENT_ID     = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
+NTS_API_KEY         = os.getenv("NTS_API_KEY")
 DART_API_KEY        = os.getenv("DART_API_KEY", "3246eba1857c0b107dcc21c6e30136045a8d7ff3")
 
 CORP_CODE_CACHE_SECONDS = 60 * 60 * 12
-REPORT_CODES = ["11011", "11014", "11012", "11013"]
 
-# ─────────────────────────────────────────────
-# DART 기업 목록 캐시
-# ─────────────────────────────────────────────
 _corp_code_cache = {"fetched_at": 0.0, "companies": []}
 _corp_code_lock  = threading.Lock()
 
@@ -93,17 +90,11 @@ with app.app_context():
     _get_corp_codes()
 
 
-# ─────────────────────────────────────────────
-# 공통 라우트
-# ─────────────────────────────────────────────
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# ─────────────────────────────────────────────
-# 뉴스 검색
-# ─────────────────────────────────────────────
 @app.route("/api/search_news")
 def search_news():
     keyword = request.args.get("q", "").strip()
@@ -131,9 +122,6 @@ def search_news():
         return jsonify([])
 
 
-# ─────────────────────────────────────────────
-# 네이버 데이터랩 트렌드
-# ─────────────────────────────────────────────
 @app.route("/api/trend")
 def get_trend():
     keyword = request.args.get("q")
@@ -167,32 +155,20 @@ def get_trend():
         return jsonify({"error": "Failed to fetch trend"}), 500
 
 
-# ─────────────────────────────────────────────
-# 기업 검색 통합 엔드포인트
-# 검색: 목록만 빠르게 반환 (임직원수 제외)
-# ─────────────────────────────────────────────
 @app.route("/api/company/search")
 def company_search():
-    keyword     = request.args.get("q", "").strip()
-    search_type = request.args.get("type", "all")
-
-    print(f"[SEARCH CALLED] keyword={keyword}, type={search_type}")
+    keyword = request.args.get("q", "").strip()
+    print(f"[SEARCH CALLED] keyword={keyword}")
 
     if not keyword:
         return jsonify({"error": "검색어를 입력해주세요."}), 400
 
-    dart_results = []
-
-    if search_type in ("all", "dart"):
-        dart_results = _search_dart(keyword)
+    dart_results = _search_dart(keyword)
     print(f"[SEARCH] dart 완료: {len(dart_results)}건")
 
     return jsonify({"dart": dart_results, "nps": []})
 
 
-# ─────────────────────────────────────────────
-# DART 기업 상세 (클릭 시 호출 - 임직원수 포함)
-# ─────────────────────────────────────────────
 @app.route("/api/company/dart/detail")
 def dart_detail():
     corp_code = request.args.get("corp_code", "").strip()
@@ -205,9 +181,17 @@ def dart_detail():
     return jsonify({**info, **finance})
 
 
-# ─────────────────────────────────────────────
-# 헬퍼: DART 회사 검색 (캐시 기반, 임직원수 미포함)
-# ─────────────────────────────────────────────
+@app.route("/api/company/nts")
+def company_nts():
+    b_no_raw = request.args.get("b_no", "").strip()
+    b_no     = b_no_raw.replace("-", "").zfill(10)
+
+    if not b_no.isdigit() or len(b_no) != 10:
+        return jsonify({"error": "사업자등록번호 형식 오류 (10자리)"}), 400
+
+    return jsonify(_fetch_nts(b_no))
+
+
 def _search_dart(keyword: str) -> list:
     try:
         corp_list = _get_corp_codes()
@@ -232,7 +216,6 @@ def _search_dart(keyword: str) -> list:
                 "corp_code":  c["corp_code"],
                 "corp_name":  c["corp_name"],
                 "stock_code": c["stock_code"] or "-",
-                "corp_cls":   "-",
                 "source":     "DART"
             })
 
@@ -244,9 +227,6 @@ def _search_dart(keyword: str) -> list:
         return []
 
 
-# ─────────────────────────────────────────────
-# 헬퍼: DART 기업 기본정보 + 임직원수 (상세 클릭 시)
-# ─────────────────────────────────────────────
 def _fetch_dart_company_info(corp_code: str) -> dict:
     try:
         res = _dart_session.get(
@@ -259,7 +239,7 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
         if d.get("status") != "000":
             return {}
         return {
-            "corp_name":     d.get("corp_name"),
+            "corp_name":     d.get("corp_name", "-"),
             "corp_name_eng": d.get("corp_name_eng", "-"),
             "stock_code":    d.get("stock_code") or "-",
             "ceo_nm":        d.get("ceo_nm", "-"),
@@ -267,7 +247,7 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
             "jurir_no":      d.get("jurir_no", "-"),
             "bizr_no":       d.get("bizr_no", "-"),
             "adres":         d.get("adres", "-"),
-            "hm_url":        d.get("hm_url", "-"),
+            "hm_url":        d.get("hm_url") or "-",
             "phn_no":        d.get("phn_no", "-"),
             "induty_code":   d.get("induty_code", "-"),
             "est_dt":        d.get("est_dt", "-"),
@@ -279,9 +259,6 @@ def _fetch_dart_company_info(corp_code: str) -> dict:
         return {}
 
 
-# ─────────────────────────────────────────────
-# 헬퍼: DART 임직원수 (전년도 사업보고서 1회만)
-# ─────────────────────────────────────────────
 def _fetch_dart_emp(corp_code: str):
     year = str(datetime.date.today().year - 1)
     try:
@@ -312,9 +289,6 @@ def _fetch_dart_emp(corp_code: str):
         return None
 
 
-# ─────────────────────────────────────────────
-# 헬퍼: DART 재무정보
-# ─────────────────────────────────────────────
 def _fetch_dart_finance(corp_code: str) -> dict:
     year = str(datetime.date.today().year - 1)
     try:
@@ -347,6 +321,33 @@ def _fetch_dart_finance(corp_code: str) -> dict:
     except Exception as e:
         print(f"[DART FINANCE ERROR] {e}")
         return {"finance": [], "finance_year": year}
+
+
+def _fetch_nts(b_no: str) -> dict:
+    if not NTS_API_KEY:
+        return {"error": "NTS_API_KEY 미설정"}
+    url = f"https://api.odcloud.kr/api/nts-businessman/v1/status?serviceKey={NTS_API_KEY}"
+    try:
+        res = _dart_session.post(url,
+            headers={"Content-Type": "application/json", "Accept": "application/json"},
+            json={"b_no": [b_no]}, timeout=5, verify=False)
+        res.raise_for_status()
+        data = res.json().get("data", [])
+        return data[0] if data else {}
+    except Exception as e:
+        print(f"[NTS ERROR] {e}")
+        return {}
+
+
+def _corp_cls_label(cls: str) -> str:
+    return {"Y": "유가증권(KOSPI)", "K": "코스닥(KOSDAQ)", "N": "코넥스", "E": "기타(비상장)"}.get(cls or "", cls or "-")
+
+
+def _to_int(value) -> int:
+    try:
+        return int(str(value).replace(",", ""))
+    except (TypeError, ValueError):
+        return 0
 
 
 if __name__ == "__main__":
