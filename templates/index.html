@@ -136,7 +136,6 @@
   <div id="company-result-area" class="company-result-area">
     <div class="result-tabs">
       <button class="result-tab active" onclick="switchResultTab('dart-panel', this)">📈 상장사 (DART)</button>
-      <button class="result-tab" onclick="switchResultTab('nps-panel', this)">🏭 일반 사업장 (NPS)</button>
     </div>
 
     <!-- DART 결과 -->
@@ -150,21 +149,6 @@
         <tbody id="dart-tbody"></tbody>
       </table>
     </div>
-
-    <!-- NPS 결과 -->
-    <div id="nps-panel" class="result-panel card">
-      <table id="nps-table">
-        <thead>
-          <tr>
-            <th>사업장명</th><th>업종</th><th>가입자수(임직원)</th>
-            <th>사업자등록번호</th><th>주소</th>
-          </tr>
-        </thead>
-        <tbody id="nps-tbody"></tbody>
-      </table>
-    </div>
-  </div>
-</div>
 
 <!-- ══ DART 상세 모달 ══ -->
 <div class="modal-overlay" id="dart-modal">
@@ -191,13 +175,6 @@ function switchTab(id, button) {
   document.getElementById(id).classList.add('active');
   button.classList.add('active');
   localStorage.setItem("currentTab", id);
-}
-
-function switchResultTab(id, button) {
-  document.querySelectorAll('.result-panel').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.result-tab').forEach(btn => btn.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
-  button.classList.add('active');
 }
 
 function formatNumber(v) {
@@ -400,7 +377,6 @@ function searchCompany() {
       loading.classList.remove("show");
       area.classList.add("show");
       renderDartTable(data.dart || []);
-      renderNpsTable(data.nps || []);
     })
     .catch(() => { loading.classList.remove("show"); alert("서버 오류가 발생했습니다."); });
 }
@@ -421,25 +397,6 @@ function renderDartTable(list) {
       <td><span class="badge ${bc}">${cls}</span></td>
       <td>${c.stock_code || "-"}</td>
       <td><button class="btn btn-outline btn-sm" onclick="openDartDetail('${c.corp_code}','${c.corp_name}')">상세</button></td>`;
-    tbody.appendChild(row);
-  });
-}
-
-function renderNpsTable(list) {
-  const tbody = document.getElementById("nps-tbody");
-  tbody.innerHTML = "";
-  if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="5" class="empty-msg">NPS 검색 결과가 없습니다.</td></tr>`;
-    return;
-  }
-  list.forEach(c => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td><strong>${c["사업장명"]}</strong></td>
-      <td>${c["업종"] || "-"}</td>
-      <td>${formatNumber(c["가입자수"])}</td>
-      <td>${c["사업자등록번호"] || "-"}</td>
-      <td style="max-width:180px; word-break:break-all;">${c["주소"] || "-"}</td>`;
     tbody.appendChild(row);
   });
 }
